@@ -15,12 +15,8 @@ Hilden, Germany
 
 *Status: §1–§4 complete. §5 (Implications) and §6 (Conclusion) outstanding.*
 
----
-Social:
-https://dillenberg.net
-https://www.linkedin.com/in/hgod/
-https://x.com/Jeuner
-https://www.youtube.com/
+**Social:** [dillenberg.net](https://dillenberg.net) · [LinkedIn](https://www.linkedin.com/in/hgod/) · [X](https://x.com/Jeuner) · [YouTube](https://www.youtube.com/)
+
 ---
 
 ## Abstract
