@@ -1,6 +1,8 @@
-LLM agents don't just have unsynchronized clocks.
-They experience different amounts of time.
-This paper proposes a framework for that gap — built on agent proper time (Eigenzeit) and a Causal-Dilation Clock extending classical vector clocks.
+> LLM agents don't just have unsynchronized clocks.
+> They experience different amounts of time.
+>
+> This paper proposes a framework for that gap — built on *agent proper time* (Eigenzeit)
+> and a *Causal-Dilation Clock* extending classical vector clocks.
 
 # Time Dilation in LLM Agent Systems
 
