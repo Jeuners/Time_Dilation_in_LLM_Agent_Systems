@@ -37,6 +37,9 @@ Distributed systems literature treats time as a coordination problem to be solve
 > nicht weil die Clocks falsch laufen, sondern weil Timestamps für LLMs kein 
 > neutrales Metadatum sind. Sie sind interpretierbarer Inhalt.
 
+This observation is the point of departure for the framework developed in this paper.
+*(In short: as memory grew, agents began interpreting timestamps rather than using them — reconstructing timelines, losing focus, destabilising the system. Timestamps, it turned out, are not neutral metadata for an LLM. They are interpretable content.)*
+
 The conventional view treats time in distributed systems as a coordination challenge. Lamport's logical clocks [^1], Mattern's vector clocks [^2], and Spanner's TrueTime [^3] all approach the problem with the same implicit assumption: there is a real, objective time, and the engineering challenge is to approximate it consistently across participating nodes. The assumption is sound for distributed databases, where nodes are computationally homogeneous and clock divergence is bounded by network latency and physical drift.
 
 The assumption breaks for autonomous LLM-based agents.
