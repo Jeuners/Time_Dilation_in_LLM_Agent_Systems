@@ -191,10 +191,10 @@ Throughout this section, we mark each component as either ✓ implemented and op
 | M2M peer dispatch (MARTIN network)         | ✓ Implemented |
 | Per-agent SQLite history with timestamps   | ✓ Implemented |
 | Wall-clock-only logging                    | ✓ Implemented |
-| Explicit `reference_now` per `PlanStep`    | ⚠ Conceptual  |
-| `TimeProvider` injection across agents     | ⚠ Conceptual  |
-| Causal-Dilation Clock per dispatch         | ⚠ Conceptual  |
-| Drift detection and re-sync policy         | ⚠ Conceptual  |
+| Explicit `reference_now` per `PlanStep`    | ✓ Implemented |
+| `TimeProvider` injection across agents     | ✓ Implemented |
+| Causal-Dilation Clock per dispatch         | ✓ Implemented |
+| Drift detection and re-sync policy         | ✓ Implemented |
 | Eigenzeit-aware logging tuple              | ⚠ Conceptual  |
 
 The conceptual components are the subject of an ongoing refactor informed by the present analysis.
