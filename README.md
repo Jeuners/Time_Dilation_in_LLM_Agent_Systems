@@ -28,6 +28,14 @@ Distributed systems literature treats time as a coordination problem to be solve
 ---
 
 ## 1. Introduction
+> **Field observation (AgentClaw, 2025):**
+> In AgentClaw beobachteten wir folgendes Phänomen: Mit wachsendem Memory — 
+> Hunderte von Einträgen, jeder mit Timestamp — begannen die Agenten zu taumeln. 
+> Die LLMs fingen an, die Zeitachse aktiv zu rekonstruieren: Was ist älter? 
+> Passt das noch? Ist das noch aktuell? Diese Interpretation frisst Kontext-Budget 
+> und verschiebt den Fokus weg vom eigentlichen Task. Das System wird instabil — 
+> nicht weil die Clocks falsch laufen, sondern weil Timestamps für LLMs kein 
+> neutrales Metadatum sind. Sie sind interpretierbarer Inhalt.
 
 The conventional view treats time in distributed systems as a coordination challenge. Lamport's logical clocks [^1], Mattern's vector clocks [^2], and Spanner's TrueTime [^3] all approach the problem with the same implicit assumption: there is a real, objective time, and the engineering challenge is to approximate it consistently across participating nodes. The assumption is sound for distributed databases, where nodes are computationally homogeneous and clock divergence is bounded by network latency and physical drift.
 
