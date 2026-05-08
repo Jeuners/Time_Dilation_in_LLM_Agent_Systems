@@ -195,7 +195,7 @@ Throughout this section, we mark each component as either ✓ implemented and op
 | `TimeProvider` injection across agents     | ✓ Implemented |
 | Causal-Dilation Clock per dispatch         | ✓ Implemented |
 | Drift detection and re-sync policy         | ✓ Implemented |
-| Eigenzeit-aware logging tuple              | ⚠ Conceptual  |
+| Eigenzeit-aware logging tuple              | ✓ Implemented |
 
 The conceptual components are the subject of an ongoing refactor informed by the present analysis.
 
