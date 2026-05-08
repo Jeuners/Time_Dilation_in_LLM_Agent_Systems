@@ -13,7 +13,7 @@ Bridging IT, AI & Humanity e.V.
 Hilden, Germany
 *Working draft, 06 May 2026*
 
-*Status: §1–§4 complete. §5 (Implications) and §6 (Conclusion) outstanding.*
+*Status: §1–§6 complete.*
 
 **Social:** [dillenberg.net](https://dillenberg.net) · [LinkedIn](https://www.linkedin.com/in/hgod/) · [X](https://x.com/Jeuner) · [YouTube](https://www.youtube.com/)
 
