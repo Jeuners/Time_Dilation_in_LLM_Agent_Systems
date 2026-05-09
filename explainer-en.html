@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Do AI Robots Talk to Each Other?</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --yellow: #FFD93D; --green: #6BCB77; --blue: #4D96FF;
+    --pink: #FF6B6B; --purple: #C77DFF; --dark: #1a1a2e;
+    --card: #ffffff12; --radius: 20px;
+  }
+  body { font-family: 'Nunito', sans-serif; background: var(--dark); color: #fff; overflow-x: hidden; }
+  .hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; inset: 0; background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); pointer-events: none; }
+  .hero-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--yellow); margin-bottom: 20px; opacity: 0; animation: fadeUp 0.6s 0.2s forwards; }
+  .hero h1 { font-size: clamp(2.2rem, 6vw, 5rem); font-weight: 900; line-height: 1.08; letter-spacing: -0.03em; text-wrap: balance; margin-bottom: 24px; opacity: 0; animation: fadeUp 0.6s 0.4s forwards; }
+  .hero h1 span { color: var(--yellow); }
+  .hero-lead { font-size: clamp(1.1rem, 2vw, 1.4rem); color: #ffffffbb; max-width: 560px; line-height: 1.6; margin-bottom: 48px; text-wrap: pretty; opacity: 0; animation: fadeUp 0.6s 0.6s forwards; }
+  .hero-robots { display: flex; gap: 32px; align-items: flex-end; justify-content: center; flex-wrap: wrap; opacity: 0; animation: fadeUp 0.6s 0.8s forwards; }
+  .robot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .robot-body { width: 90px; height: 90px; border-radius: 22px; display: flex; align-items: center; justify-content: center; font-size: 44px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); transition: transform 0.2s; animation: robotFloat 3s ease-in-out infinite; }
+  .robot-body:hover { transform: scale(1.08) translateY(-4px); }
+  .robot:nth-child(2) .robot-body { animation-delay: 0.8s; }
+  .robot:nth-child(3) .robot-body { animation-delay: 1.6s; }
+  .robot-name { font-size: 14px; font-weight: 700; color: #ffffffcc; }
+  .robot-role { font-size: 11px; color: #ffffff66; text-align: center; max-width: 90px; }
+  .r-martin { background: linear-gradient(135deg, #4D96FF, #2563eb); }
+  .r-bob    { background: linear-gradient(135deg, #6BCB77, #16a34a); }
+  .r-diana  { background: linear-gradient(135deg, #C77DFF, #7c3aed); }
+  .r-qc     { background: linear-gradient(135deg, #FF6B6B, #dc2626); }
+  section { padding: clamp(64px, 8vw, 120px) 20px; max-width: 1100px; margin: 0 auto; }
+  .section-label { font-size: 12px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--yellow); margin-bottom: 16px; }
+  .section-title { font-size: clamp(1.8rem, 3.5vw, 2.8rem); font-weight: 900; line-height: 1.12; letter-spacing: -0.02em; margin-bottom: 48px; text-wrap: balance; }
+  .agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 48px; }
+  .agent-card { background: #ffffff0d; border: 1px solid #ffffff15; border-radius: var(--radius); padding: 28px 24px; transition: border-color 0.2s, transform 0.2s; }
+  .agent-card:hover { border-color: #ffffff30; transform: translateY(-4px); }
+  .agent-card-icon { font-size: 48px; margin-bottom: 16px; display: block; }
+  .agent-card h3 { font-size: 20px; font-weight: 900; margin-bottom: 8px; }
+  .agent-card p { font-size: 15px; color: #ffffffaa; line-height: 1.6; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 10px; border-radius: 99px; margin-top: 12px; }
+  .tag-blue { background: #4D96FF33; color: #4D96FF; } .tag-green { background: #6BCB7733; color: #6BCB77; } .tag-purple { background: #C77DFF33; color: #C77DFF; } .tag-red { background: #FF6B6B33; color: #FF6B6B; }
+  .stage-wrap { background: #ffffff08; border: 1px solid #ffffff15; border-radius: var(--radius); padding: 40px; position: relative; overflow: hidden; }
+  .stage { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 160px; position: relative; }
+  .stage-agent { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-shrink: 0; }
+  .stage-icon { width: 72px; height: 72px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 36px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); transition: transform 0.3s, box-shadow 0.3s; }
+  .stage-icon.active { transform: scale(1.15); box-shadow: 0 0 0 4px var(--yellow), 0 8px 30px rgba(0,0,0,0.4); }
+  .stage-label { font-size: 13px; font-weight: 700; color: #ffffffcc; }
+  .stage-status { font-size: 11px; color: #ffffff55; min-height: 16px; text-align: center; max-width: 80px; }
+  .msg-bubble { position: absolute; top: 50%; transform: translateY(-50%); background: var(--yellow); color: #1a1a2e; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 20px; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.3); pointer-events: none; opacity: 0; z-index: 10; }
+  .msg-bubble.qc { background: var(--pink); color: #fff; } .msg-bubble.approved { background: var(--green); color: #fff; }
+  .arrow-line { flex: 1; height: 2px; background: #ffffff15; position: relative; min-width: 30px; }
+  .play-btn { display: inline-flex; align-items: center; gap: 10px; background: var(--yellow); color: #1a1a2e; border: none; border-radius: 99px; padding: 14px 32px; font-family: 'Nunito', sans-serif; font-size: 17px; font-weight: 900; cursor: pointer; margin-top: 28px; transition: transform 0.15s, box-shadow 0.15s; box-shadow: 0 4px 20px rgba(255,217,61,0.3); }
+  .play-btn:hover { transform: translateY(-2px); } .play-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .log-box { margin-top: 20px; background: #00000030; border-radius: 12px; padding: 16px 20px; font-size: 14px; color: #ffffffbb; min-height: 48px; line-height: 1.8; font-family: monospace; }
+  .log-line { opacity: 0; animation: fadeIn 0.4s forwards; } .log-ok { color: var(--green); } .log-qc { color: var(--pink); } .log-time { color: var(--purple); }
+  .zeit-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .zeit-card { background: #ffffff0d; border: 1px solid #ffffff15; border-radius: var(--radius); padding: 28px 24px; }
+  .zeit-bar-wrap { height: 8px; background: #ffffff15; border-radius: 99px; margin: 16px 0 8px; overflow: hidden; }
+  .zeit-bar { height: 100%; border-radius: 99px; animation: barGrow 1.5s ease-out forwards; transform-origin: left; transform: scaleX(0); }
+  .zeit-bar-fast { background: var(--green); width: 95%; } .zeit-bar-normal { background: var(--blue); width: 60%; } .zeit-bar-slow { background: var(--purple); width: 25%; }
+  .zeit-emoji { font-size: 36px; margin-bottom: 12px; display: block; } .zeit-name { font-size: 18px; font-weight: 900; margin-bottom: 6px; } .zeit-desc { font-size: 14px; color: #ffffffaa; line-height: 1.5; } .zeit-rate { font-size: 22px; font-weight: 900; margin-top: 8px; }
+  .qc-flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center; margin-bottom: 40px; }
+  .qc-step { background: #ffffff0d; border: 1px solid #ffffff15; border-radius: 16px; padding: 20px 24px; text-align: center; min-width: 140px; transition: border-color 0.2s; }
+  .qc-step:hover { border-color: var(--yellow); }
+  .qc-step-icon { font-size: 36px; margin-bottom: 10px; display: block; } .qc-step-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; } .qc-step-desc { font-size: 12px; color: #ffffffaa; }
+  .qc-arrow { font-size: 24px; color: #ffffff40; padding: 0 8px; flex-shrink: 0; }
+  .score-demo { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 32px; }
+  .score-badge { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 20px; border-radius: 14px; min-width: 80px; font-weight: 900; }
+  .score-badge .num { font-size: 28px; line-height: 1; } .score-badge .lbl { font-size: 11px; opacity: 0.8; }
+  .score-fail { background: #FF6B6B22; border: 2px solid var(--pink); color: var(--pink); } .score-ok { background: #FFD93D22; border: 2px solid var(--yellow); color: var(--yellow); } .score-great { background: #6BCB7722; border: 2px solid var(--green); color: var(--green); }
+  .final-section { text-align: center; padding: clamp(80px, 10vw, 140px) 20px; }
+  .final-section h2 { font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 20px; text-wrap: balance; }
+  .final-section p { font-size: 18px; color: #ffffffaa; max-width: 480px; margin: 0 auto 36px; line-height: 1.6; }
+  .cta-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .cta-primary { background: var(--yellow); color: #1a1a2e; border: none; border-radius: 99px; padding: 16px 36px; font-family: 'Nunito', sans-serif; font-size: 17px; font-weight: 900; cursor: pointer; text-decoration: none; transition: transform 0.15s, box-shadow 0.15s; box-shadow: 0 4px 20px rgba(255,217,61,0.3); }
+  .cta-primary:hover { transform: translateY(-2px); }
+  .cta-secondary { background: transparent; color: #fff; border: 2px solid #ffffff30; border-radius: 99px; padding: 16px 36px; font-family: 'Nunito', sans-serif; font-size: 17px; font-weight: 700; cursor: pointer; text-decoration: none; transition: border-color 0.2s, transform 0.15s; }
+  .cta-secondary:hover { border-color: #ffffff60; transform: translateY(-2px); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes robotFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes barGrow { to { transform: scaleX(1); } }
+  @keyframes msgFly { 0% { opacity: 0; transform: translateY(-50%) translateX(0) scale(0.8); } 15% { opacity: 1; transform: translateY(-50%) translateX(0) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(-50%) translateX(var(--fly-dist)) scale(0.9); } }
+  @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 4px var(--yellow), 0 8px 30px rgba(0,0,0,0.4); } 50% { box-shadow: 0 0 0 8px var(--yellow)55, 0 8px 30px rgba(0,0,0,0.4); } }
+  @keyframes scoreIn { from { opacity: 0; transform: scale(0.5) rotate(-8deg); } to { opacity: 1; transform: scale(1) rotate(0deg); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  @media (max-width: 600px) { .stage { flex-direction: column; gap: 20px; } .arrow-line { width: 2px; height: 30px; min-width: unset; } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-eyebrow">🤖 AI Robots Explained</div>
+  <h1>How Do <span>AI Agents</span><br>Talk to Each Other?</h1>
+  <p class="hero-lead">Imagine a team of robots — each with a special job. They send messages to work together. That's exactly how AI agents work!</p>
+  <div class="hero-robots">
+    <div class="robot"><div class="robot-body r-martin">🧠</div><div class="robot-name">Martin</div><div class="robot-role">The Boss</div></div>
+    <div class="robot"><div class="robot-body r-bob">⚡</div><div class="robot-name">Bob</div><div class="robot-role">Super fast</div></div>
+    <div class="robot"><div class="robot-body r-diana">🐢</div><div class="robot-name">Diana</div><div class="robot-role">Very thorough</div></div>
+    <div class="robot"><div class="robot-body r-qc">🔍</div><div class="robot-name">QC-Checker</div><div class="robot-role">Quality control</div></div>
+  </div>
+</div>
+
+<section>
+  <div class="section-label">The Team</div>
+  <h2 class="section-title">Every robot has<br>a superpower</h2>
+  <div class="agent-grid">
+    <div class="agent-card"><span class="agent-card-icon">🧠</span><h3>Martin — The Boss</h3><p>Martin gets the job and splits the work. He waits for results and puts everything together.</p><span class="tag tag-blue">Delegator</span></div>
+    <div class="agent-card"><span class="agent-card-icon">⚡</span><h3>Bob — The Flash</h3><p>Bob works super fast. He replies instantly — like doing easy math problems in your head.</p><span class="tag tag-green">Echo · fast</span></div>
+    <div class="agent-card"><span class="agent-card-icon">🐢</span><h3>Diana — The Thorough One</h3><p>Diana takes a bit longer but does it really carefully — like writing a perfect essay.</p><span class="tag tag-purple">Slow · careful</span></div>
+    <div class="agent-card"><span class="agent-card-icon">🔍</span><h3>QC-Checker — The Teacher</h3><p>Checks if the work is good enough. Gives a score from 1 to 10. Too low? Do it again!</p><span class="tag tag-red">Reviewer · goal 9/10</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Live Demo</div>
+  <h2 class="section-title">Watch them<br>work together!</h2>
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="stage-agent"><div class="stage-icon r-martin" id="si-user">👤</div><div class="stage-label">You</div><div class="stage-status" id="ss-user">Task!</div></div>
+      <div class="arrow-line" id="line1" style="position:relative;"><div class="msg-bubble" id="msg1">📝 Do this!</div></div>
+      <div class="stage-agent"><div class="stage-icon r-martin" id="si-martin">🧠</div><div class="stage-label">Martin</div><div class="stage-status" id="ss-martin">waiting...</div></div>
+      <div class="arrow-line" id="line2" style="position:relative;"><div class="msg-bubble" id="msg2">📋 Handle this!</div></div>
+      <div class="stage-agent"><div class="stage-icon r-bob" id="si-bob">⚡</div><div class="stage-label">Bob</div><div class="stage-status" id="ss-bob">ready</div></div>
+      <div class="arrow-line" id="line3" style="position:relative;"><div class="msg-bubble qc" id="msg3">🔍 Is this good?</div></div>
+      <div class="stage-agent"><div class="stage-icon r-qc" id="si-qc">🔍</div><div class="stage-label">QC Check</div><div class="stage-status" id="ss-qc">ready</div></div>
+    </div>
+    <div id="score-display" style="text-align:center;margin-top:24px;min-height:48px;"></div>
+    <div class="log-box" id="log">Press the button and watch! 👇</div>
+    <div style="text-align:center;"><button class="play-btn" id="play-btn" onclick="runDemo()">▶ Start Mission!</button></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Time Perception</div>
+  <h2 class="section-title">Why time feels<br>different for each robot</h2>
+  <p style="color:#ffffffaa;font-size:17px;max-width:580px;line-height:1.7;margin-bottom:40px;">You know how playing video games flies by — but waiting at the dentist feels forever? Robots experience the same thing. Researchers call it <strong style="color:var(--yellow)">Eigenzeit</strong> (proper time).</p>
+  <div class="zeit-cards">
+    <div class="zeit-card"><span class="zeit-emoji">⚡</span><div class="zeit-name" style="color:var(--green)">Bob — Lightning Fast</div><div class="zeit-bar-wrap"><div class="zeit-bar zeit-bar-fast"></div></div><div class="zeit-rate" style="color:var(--green)">97 actions/second</div><div class="zeit-desc" style="margin-top:8px">For Bob, an hour feels like a minute. He does SO much in so little time!</div></div>
+    <div class="zeit-card"><span class="zeit-emoji">🧠</span><div class="zeit-name" style="color:var(--blue)">Martin — Normal</div><div class="zeit-bar-wrap"><div class="zeit-bar zeit-bar-normal"></div></div><div class="zeit-rate" style="color:var(--blue)">2.6 actions/second</div><div class="zeit-desc" style="margin-top:8px">Martin coordinates everything. Not too fast, not too slow — just right.</div></div>
+    <div class="zeit-card"><span class="zeit-emoji">🐢</span><div class="zeit-name" style="color:var(--purple)">Diana — Thorough</div><div class="zeit-bar-wrap"><div class="zeit-bar zeit-bar-slow"></div></div><div class="zeit-rate" style="color:var(--purple)">0.04 actions/second</div><div class="zeit-desc" style="margin-top:8px">Diana experiences stretched time. Each task feels like a big journey for her.</div></div>
+  </div>
+  <div style="background:#ffffff08;border:1px solid #ffffff15;border-radius:var(--radius);padding:28px 32px;margin-top:32px;">
+    <div style="font-size:22px;font-weight:900;margin-bottom:12px;">💡 Remember it like this:</div>
+    <p style="font-size:16px;color:#ffffffbb;line-height:1.7;">When you play video games, time flies — you make lots of moves per minute.<br>When you wait for the bus, time crawls — you do almost nothing.<br><br>Robots have the same phenomenon. We call it the <strong style="color:var(--yellow)">Causal Dilation Clock</strong> — a clock that measures how active each robot truly was.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Quality System</div>
+  <h2 class="section-title">The Double-Agent<br>Trick 🔍</h2>
+  <p style="color:#ffffffaa;font-size:17px;max-width:560px;line-height:1.7;margin-bottom:40px;">Good work always gets checked. At school, that's your teacher. For our robots, it's the <strong style="color:var(--pink)">QC-Checker</strong>.</p>
+  <div class="qc-flow">
+    <div class="qc-step"><span class="qc-step-icon">📝</span><div class="qc-step-title">Task arrives</div><div class="qc-step-desc">Martin gets a job</div></div>
+    <div class="qc-arrow">→</div>
+    <div class="qc-step"><span class="qc-step-icon">⚡</span><div class="qc-step-title">Bob works</div><div class="qc-step-desc">Completes the task fast</div></div>
+    <div class="qc-arrow">→</div>
+    <div class="qc-step" style="border-color:#FF6B6B55"><span class="qc-step-icon">🔍</span><div class="qc-step-title">QC checks</div><div class="qc-step-desc">6 out of 10 times</div></div>
+    <div class="qc-arrow">→</div>
+    <div class="qc-step"><span class="qc-step-icon">🏆</span><div class="qc-step-title">Result</div><div class="qc-step-desc">Good enough? Done!</div></div>
+  </div>
+  <div style="background:#ffffff08;border:1px solid #ffffff15;border-radius:var(--radius);padding:32px;text-align:center;">
+    <div style="font-size:18px;font-weight:700;margin-bottom:24px;color:#ffffffcc;">Scores the QC-Checker gives:</div>
+    <div class="score-demo">
+      <div class="score-badge score-fail"><span class="num">1-6</span><span class="lbl">😬 Try again!</span></div>
+      <div class="score-badge score-ok"><span class="num">7-8</span><span class="lbl">😊 Good!</span></div>
+      <div class="score-badge score-great"><span class="num">9-10</span><span class="lbl">🌟 Amazing!</span></div>
+    </div>
+    <p style="margin-top:24px;color:#ffffffaa;font-size:15px;">Score below 7 → Bob has to try again! (Up to 2 more tries)</p>
+  </div>
+</section>
+
+<div class="final-section">
+  <h2>Now you know how<br>AI teams <span style="color:var(--yellow)">really work!</span></h2>
+  <p>Agents · Delegation · Quality Check · Proper Time — it's not magic, it's clever teamwork!</p>
+  <div class="cta-group">
+    <a href="https://github.com/Jeuners/Time_Dilation_in_LLM_Agent_Systems" class="cta-primary">📄 Read the Paper</a>
+    <a href="explainer-de.html" class="cta-secondary">🇩🇪 Deutsch</a>
+  </div>
+</div>
+
+<script>
+const log=document.getElementById('log'),playBtn=document.getElementById('play-btn');let running=false;
+function addLog(t,c='',d=0){return new Promise(r=>setTimeout(()=>{const e=document.createElement('div');e.className='log-line '+c;e.textContent=t;log.appendChild(e);log.scrollTop=log.scrollHeight;r()},d))}
+function setActive(id,a=true){const e=document.getElementById(id);if(!e)return;a?(e.classList.add('active'),e.style.animation='pulse-glow 0.8s ease-in-out infinite'):(e.classList.remove('active'),e.style.animation='')}
+function setStatus(id,t){const e=document.getElementById(id);if(e)e.textContent=t}
+function flyMsg(id,lid,rev=false){return new Promise(r=>{const b=document.getElementById(id),l=document.getElementById(lid);if(!b||!l){r();return}const d=l.offsetWidth;b.style.setProperty('--fly-dist',(rev?-d:d)+'px');b.style.left=(rev?d-20:0)+'px';b.style.animation='none';b.offsetHeight;b.style.animation='msgFly 1.2s ease-in-out forwards';setTimeout(r,1300)})}
+function showScore(s){const e=document.getElementById('score-display'),c=s>=9?'var(--green)':s>=7?'var(--yellow)':'var(--pink)',em=s>=9?'🌟':s>=7?'😊':'😬';e.innerHTML=`<div style="font-size:48px;animation:scoreIn 0.5s forwards;opacity:0">${em}</div><div style="font-size:22px;font-weight:900;color:${c};animation:scoreIn 0.5s 0.2s forwards;opacity:0">QC Score: ${s}/10</div>`}
+async function runDemo(){if(running)return;running=true;playBtn.disabled=true;log.innerHTML='';document.getElementById('score-display').innerHTML='';['si-user','si-martin','si-bob','si-qc'].forEach(id=>setActive(id,false));['ss-user','ss-martin','ss-bob','ss-qc'].forEach(id=>setStatus(id,'waiting...'));
+const score=7+Math.floor(Math.random()*3),doQC=Math.random()<0.6;
+setActive('si-user');setStatus('ss-user','Task!');await addLog('👤 You: "Explain how agents work!"');await flyMsg('msg1','line1');setActive('si-user',false);
+setActive('si-martin');setStatus('ss-martin','splitting...');await addLog('🧠 Martin: I\'ll split the work...','' ,400);await new Promise(r=>setTimeout(r,600));
+setStatus('ss-martin','→ Bob');await flyMsg('msg2','line2');setActive('si-martin',false);
+setActive('si-bob');setStatus('ss-bob','⚡ working...');await addLog('⚡ Bob: On it! (fast)','log-time',200);await new Promise(r=>setTimeout(r,1200));
+setStatus('ss-bob','✅ done!');await addLog('⚡ Bob: Done! "Agents are robots that work together..."','log-ok',300);
+if(doQC){await addLog('🔍 QC triggered (60% chance)...','log-qc',600);setActive('si-bob',false);await flyMsg('msg3','line3');setActive('si-qc');setStatus('ss-qc','🔍 checking...');await new Promise(r=>setTimeout(r,1500));setStatus('ss-qc',`✅ Score: ${score}/10`);await addLog(`🔍 QC-Checker: Score ${score}/10 — ${score>=7?'Approved! ✅':'Try again! ❌'}`,'log-qc',200);showScore(score);setActive('si-qc',false);}
+else{setActive('si-bob',false);await addLog('✓ No QC check this time (40% chance)','',600);showScore(score);}
+setActive('si-martin');setStatus('ss-martin','🏆 Done!');await addLog('🧠 Martin: Mission complete! '+(doQC?`QC Score: ${score}/10`:'Delivered directly.'),'log-ok',500);await new Promise(r=>setTimeout(r,400));setActive('si-martin',false);setStatus('ss-user','🎉 Thanks!');
+running=false;playBtn.disabled=false;playBtn.textContent='▶ Again!';}
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.zeit-bar').forEach(b=>b.style.animation='barGrow 1.5s ease-out forwards')})},{threshold:0.3});document.querySelectorAll('.zeit-cards').forEach(el=>obs.observe(el));
+</script>
+</body>
+</html>
