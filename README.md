@@ -367,7 +367,14 @@ construction. The interesting relations (CONCURRENT_DRIFT and the
 faction-aware reclassifications) require genuinely parallel branches, which
 the orchestrator only recently gained. The classifier has not yet met the
 traffic it was built for. We flag this as the primary gap between
-implementation and validation.
+implementation and validation. Read as a diagnosis, the uniform ORDERED relation is
+itself a measurement of the system’s current topology: LogpyClaw v3 today
+operates as a centrally orchestrated hub-and-spoke system — closer to an
+agent manager with an unusually rich protocol than to an emergent
+multi-agent system. The protocol (per-message clocks, directed trust,
+adversarial bridges) is built for peer traffic that the dispatcher does not
+yet generate; closing that gap is the roadmap, and this classifier will be
+its measuring instrument.
 
 ### 5.4 Experiment: does temporal self-knowledge change decisions?
 
