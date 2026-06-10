@@ -56,6 +56,21 @@ Hilden, Germany
 
 ---
 
+## Reference Implementation
+
+The framework described here is no longer only conceptual: it is implemented
+and tested in **LogpyClaw v3**, the CDC-native multi-agent system by the same
+author (successor codebase to the AgentClaw case study in Section 4). There,
+the Causal-Dilation Clock of Section 3.4/3.5 ships as a mandatory field on
+every inter-agent message (`backend/core/cdc.py`), proper time tau is tracked
+per agent alongside an EWMA pace estimate, and cross-faction drift is
+classified as expected or anomalous before it is logged.
+
+- Project background: <https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/>
+- Source code: GitHub release in preparation — link will appear here.
+
+---
+
 ## Abstract
 
 Distributed systems literature treats time as a coordination problem to be solved through clock synchronization, logical timestamps, or consensus protocols. The literature on autonomous AI agents has inherited this framing largely without examination. This paper argues that the framing is incomplete. In multi-agent systems built on Large Language Models, time is not merely unsynchronized — it is **dilated**. Different agents experience different rates of subjective progress depending on compute budget, reasoning depth, context-window state, and orchestration position. We propose treating this phenomenon as a *productive analogy* to relativistic time dilation — explicitly not as physical isomorphism — in which each agent has a proper time (Eigenzeit), and the system's correctness depends on how these proper times relate, not on enforcing a single coordinate time. We define agent proper time formally, propose a heuristic transformation between agent reference frames, and sketch a Causal-Dilation Clock that extends standard vector clocks with per-frame dilation tracking. We illustrate the framework using AgentClaw, a running multi-agent orchestration system developed by the author, and clearly demarcate which components are implemented from which remain conceptual. We outline implications for orchestration design, logging, debugging, and the trust users place in agent decisions whose temporal context they cannot directly observe.
