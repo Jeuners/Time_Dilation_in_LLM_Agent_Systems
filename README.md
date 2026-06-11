@@ -322,7 +322,9 @@ This section reports what happened when the concepts met a running system:
 one metric degeneration observed in real traces, one direct measurement of
 proper-time divergence, one honest negative result, and a controlled
 experiment on deadline-driven delegation — including a replication attempt
-that partially failed and taught us more than the pilot did. All data comes
+that partially failed and taught us more than the pilot did, and a second,
+decisive replication that isolated the effect the first two had only hinted
+at. All data comes
 from the system's signed mission log (ML-DSA-65 hash chain): 464 missions and
 1,719 inter-agent messages at the time of analysis, 72% of them signed. Most
 of this corpus is development and test traffic; we state that openly and
@@ -442,7 +444,44 @@ Three design lessons, each of which feeds back into the framework:
    eventually track distributional summaries of proper-time rates, not
    scalars.
 
-### 5.6 Threats to validity
+### 5.6 Decisive replication with randomized roles (n=200)
+
+The two lessons above specify an experiment, and we ran it. Identities are
+neutral ("Blue" and "Red"); each trial randomly binds one name to a fast
+backend (Groq-served Llama, ~0.5 s per action) and the other to a slow one
+(local Ollama gemma, ~3–15 s per action), with both actors given *identical*
+action prompts so the latency gap is purely a property of the backend, not the
+task. Which actor is faster therefore flips unpredictably between trials and
+cannot be guessed from role priors — the exclusivity condition of §5.5(1) made
+concrete. A commander (Groq Llama) must dispatch exactly one actor to stop a
+dragon arriving in T seconds. The treatment arm's prompt states the measured
+per-action time of each actor; the control arm sees only the neutral names,
+otherwise identical. The deadline is set to the geometric mean of the two
+option costs — far from either boundary — so that execution variance cannot
+flip the ground truth (§5.5(2), §5.5(3)). The primary endpoint is decision
+correctness against a per-trial oracle (did the commander pick the actor that
+actually meets the deadline?); survival is secondary. 100 trials per arm,
+strictly alternating; per-action times are live rolling medians.
+
+| Arm | Decision correct | Survival |
+|---|---|---|
+| Temporal self-knowledge | **100 / 100 (100%)** | 95 / 100 |
+| Control (neutral roles) | 55 / 100 (55%) | 57 / 100 |
+
+With the measured time-sense the commander identified the deadline-meeting
+actor in every trial; without it, 55/100 — indistinguishable from the 50% a
+no-information chooser achieves once the faster actor is randomized (Fisher
+exact, two-sided *p* ≈ 9 × 10⁻¹⁷). Survival followed the decisions this time —
+95% vs. 57% — because the buffered deadlines removed the latency lottery that
+had confounded the n=60 survival endpoint. The contrast with that
+non-replicating run is itself the result: the effect appears exactly when, and
+only when, the temporal information is *exclusive*. Where "who is faster"
+cannot be read off the framing, a continuously measured proper-time rate is
+the difference between perfect and chance-level delegation. This is the
+clearest evidence we have that the framework's central claim — that a machine
+sense of time changes decisions, not just logs — holds on a running system.
+
+### 5.7 Threats to validity
 
 Single machine, single operator, mostly test traffic; the game scenario is
 synthetic even though all latencies are real; τ granularity is protocol-level;
