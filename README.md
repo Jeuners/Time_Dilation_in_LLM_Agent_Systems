@@ -1,509 +1,879 @@
-> [!NOTE]
-> **Heads-up: this is a hardcore tech paper.** It assumes working knowledge of
-> distributed systems (vector clocks, consensus, logical time) and LLM agent
-> architectures. If that is not your world, read the example below — it carries
-> the whole idea. Everything after it is deep water, and you are welcome to dive.
+Time Is Not Metadata
 
-## The Idea in 60 Seconds (for non-technical readers)
+Interpretable Timestamps and Measured Proper Time in LLM Agent Systems
 
-Imagine you hand the same assignment to three colleagues at 9:00 and ask everyone
-to report back at 9:05.
-
-- **Anna** is quick: within those five minutes she reads the brief, sketches three
-  options, discards two and polishes the third.
-- **Ben** is thorough but slow: after five minutes he is still reading the brief.
-- **Carla** spent the whole time on hold with a supplier and has not started.
-
-By the wall clock, all three *had the same five minutes*. But the amount of lived,
-productive time inside each head differs wildly. If their manager now treats all
-three reports as equally fresh and equally deliberated, decisions get made on
-work that has aged very unevenly.
-
-Teams of AI agents have exactly this problem, only sharper: a small, fast model
-may live through dozens of reasoning steps while a large model completes one, and
-background services tick in rhythms of hours or days. The wall clock says one
-minute passed for everyone; subjectively, the agents lived through vastly
-different amounts of *experienced work* — what this paper calls proper time
-(*Eigenzeit*).
-
-This paper gives that gap a name, a vocabulary, and a measuring device: the
-**Causal-Dilation Clock**, which lets a system notice the divergence, log it,
-and act on it — instead of silently trusting that one minute is one minute
-for everybody.
-
-From here on, it gets technical. You have been warned. :)
-
----
-
-> LLM agents don't just have unsynchronized clocks.
-> They experience different amounts of time.
->
-> This paper proposes a framework for that gap — built on *agent proper time* (Eigenzeit)
-> and a *Causal-Dilation Clock* extending classical vector clocks.
-
-# Time Dilation in LLM Agent Systems
-
-## Toward a Framework for Temporal Coherence
-
-**H.G.O. Dillenberg**
-Bridging IT, AI & Humanity e.V.
+H.G.O. Dillenberg
 Hilden, Germany
-*Working draft, 06 May 2026*
+Working draft, revision 2 -- August 2026
 
-*Status: §1–§5 complete (§5: preliminary evaluation, June 2026). §6 (Implications) and §7 (Conclusion) outstanding.*
+Contact: dillenberg.net · LinkedIn · X
 
-**Social:** [dillenberg.net](https://dillenberg.net) · [LinkedIn](https://www.linkedin.com/in/hgod/) · [X](https://x.com/Jeuner) · [YouTube](https://www.youtube.com/)
+***
+> Scope note. This paper assumes working knowledge of distributed systems
+> (logical clocks, vector clocks, causal consistency) and LLM agent
+> architectures. Section 1.1 states the core claim in non-technical terms;
+> everything after it is technical.
 
----
+***
+Abstract
 
-## Reference Implementation
+Distributed systems treat time as a coordination problem, solved through clock
+synchronisation, logical timestamps, or consensus. Work on LLM-based agent
+systems has largely inherited this framing. We argue the framing is incomplete
+in a specific and consequential way, and we support the argument with
+measurements from a running system.
 
-The framework described here is no longer only conceptual: it is implemented
-and tested in **LogpyClaw v3**, the CDC-native multi-agent system by the same
-author (successor codebase to the AgentClaw case study in Section 4). There,
-the Causal-Dilation Clock of Section 3.4/3.5 ships as a mandatory field on
-every inter-agent message (`backend/core/cdc.py`), proper time tau is tracked
-per agent alongside an EWMA pace estimate, and cross-faction drift is
-classified as expected or anomalous before it is logged.
+Our claim has two parts. First, **timestamps are not neutral metadata for an
+LLM agent**. Because a language model's context window makes no architectural
+distinction between metadata and content, temporal annotations enter the
+reasoning process as interpretable tokens. We report a field observation in
+which growing memory caused agents to spend context budget reconstructing
+timelines rather than executing tasks, and we argue this failure mode is
+structurally unavailable to classical distributed systems, where timestamped
+processes do not read their own timestamps. Second, **the absence of measured
+temporal information degrades agent decisions to chance**. We define agent
+proper time as a monotonic count of weighted internal operations, separate it
+from an instantaneous pace estimate, and extend vector clocks with a parallel
+dilation vector (the Causal-Dilation Clock).
 
-- Project background: <https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/>
-- Source code: <https://github.com/Jeuners/logpyclaw>
+We evaluate on LogpyClaw v3, a running multi-agent system, across 464 missions
+and 1,719 inter-agent messages. A naive lifetime-average pace metric degenerates
+in production, empirically motivating the proper-time/pace separation. Proper
+times of coordinator and worker agents diverge by factors up to 6 within
+identical wall-clock windows. In a pre-specified delegation experiment with
+randomised role-to-backend binding (n = 200), agents given measured per-action
+latencies of their peers chose the deadline-meeting delegate in 100 of 100
+trials, against 55 of 100 without (risk difference 45 percentage points, 95 %
+CI [35, 55]; Fisher exact two-sided p = 8.9 × 10⁻¹⁷). The control arm is
+statistically indistinguishable from chance (p = 0.37 against 50 %). A prior
+run without randomised roles failed to replicate; we report it in full, because
+the contrast between the two isolates the operative condition: measured
+temporal information changes decisions precisely when it is not inferable from
+static framing.
 
----
+Finally, we identify an unresolved tension between the two halves of the paper.
+The instrumentation built in response to the second finding produces exactly the
+kind of interpretable temporal content implicated in the first, and it is in
+production. We state the problem, propose mitigations, specify two experiments
+that would discriminate between the available positions, and do not claim to
+have solved it.
 
-## Abstract
+Keywords: LLM agents, multi-agent systems, distributed systems, logical
+clocks, temporal reasoning, agent orchestration, delegation, observability
 
-Distributed systems literature treats time as a coordination problem to be solved through clock synchronization, logical timestamps, or consensus protocols. The literature on autonomous AI agents has inherited this framing largely without examination. This paper argues that the framing is incomplete. In multi-agent systems built on Large Language Models, time is not merely unsynchronized — it is **dilated**. Different agents experience different rates of subjective progress depending on compute budget, reasoning depth, context-window state, and orchestration position. We propose treating this phenomenon as a *productive analogy* to relativistic time dilation — explicitly not as physical isomorphism — in which each agent has a proper time (Eigenzeit), and the system's correctness depends on how these proper times relate, not on enforcing a single coordinate time. We define agent proper time formally, propose a heuristic transformation between agent reference frames, and sketch a Causal-Dilation Clock that extends standard vector clocks with per-frame dilation tracking. We illustrate the framework using AgentClaw, a running multi-agent orchestration system developed by the author, and clearly demarcate which components are implemented from which remain conceptual. We outline implications for orchestration design, logging, debugging, and the trust users place in agent decisions whose temporal context they cannot directly observe.
+***
+1. Introduction
 
-**Keywords:** AI agents, multi-agent systems, distributed computing, temporal logic, Eigenzeit, agent orchestration, AgentClaw, MARTIN
+> Field observation (AgentClaw, 2025). As agent memory grew to hundreds of
+> entries, each carrying a timestamp, the agents began to falter. The models
+> started actively reconstructing the timeline: *What is older? Does this still
+> fit? Is this current?* That interpretive work consumed context budget and
+> displaced the actual task. The system became unstable, not because the clocks
+> were wrong, but because timestamps are not neutral metadata for an LLM. They
+> are interpretable content.
 
----
+This observation is the point of departure for the present paper, and it is
+worth being precise about why it is surprising.
 
-## 1. Introduction
-> **Field observation (AgentClaw, 2025):**
-> In AgentClaw beobachteten wir folgendes Phänomen: Mit wachsendem Memory — 
-> Hunderte von Einträgen, jeder mit Timestamp — begannen die Agenten zu taumeln. 
-> Die LLMs fingen an, die Zeitachse aktiv zu rekonstruieren: Was ist älter? 
-> Passt das noch? Ist das noch aktuell? Diese Interpretation frisst Kontext-Budget 
-> und verschiebt den Fokus weg vom eigentlichen Task. Das System wird instabil — 
-> nicht weil die Clocks falsch laufen, sondern weil Timestamps für LLMs kein 
-> neutrales Metadatum sind. Sie sind interpretierbarer Inhalt.
+The conventional treatment of time in distributed systems is a coordination
+problem. Lamport's logical clocks [1], Fidge's and Mattern's vector clocks
+[2, 3], hybrid logical clocks [4], and Spanner's TrueTime [5] share an implicit
+assumption: there exists an objective ordering, and the engineering task is to
+approximate it consistently across nodes. The assumption is sound where it is
+usually applied. A database node does not read its own Lamport counter and form
+a belief about it. The timestamp is inert with respect to the computation it
+annotates.
 
-This observation is the point of departure for the framework developed in this paper.
-*(In short: as memory grew, agents began interpreting timestamps rather than using them — reconstructing timelines, losing focus, destabilising the system. Timestamps, it turned out, are not neutral metadata for an LLM. They are interpretable content.)*
+An LLM agent has no such separation. Anything present in the context window is
+input to the forward pass. A timestamp attached to a retrieved memory is not
+metadata riding alongside the computation; it is part of the computation. The
+model will attend to it, weigh it, and reason about it, whether or not the
+system designer intended that. This is not a bug in any particular
+implementation. It is a structural property of systems whose processing
+substrate is a language model over an undifferentiated token stream.
 
-The conventional view treats time in distributed systems as a coordination challenge. Lamport's logical clocks [^1], Mattern's vector clocks [^2], and Spanner's TrueTime [^3] all approach the problem with the same implicit assumption: there is a real, objective time, and the engineering challenge is to approximate it consistently across participating nodes. The assumption is sound for distributed databases, where nodes are computationally homogeneous and clock divergence is bounded by network latency and physical drift.
+Section 3 develops the consequences of this observation, which we take to be the
+paper's primary contribution.
 
-The assumption breaks for autonomous LLM-based agents.
+A second, related problem concerns not the interpretation of temporal
+information but its absence. Consider a heterogeneous orchestration
+architecture: a coordinator dispatches sub-tasks to agents backed by different
+models, running on different hardware, with different context utilisations and
+different reasoning depths. One sub-agent completes in 200 ms; another, on a
+nominally comparable task with extended reasoning, consumes 8 seconds; a third
+is suspended on a remote tool call. From the coordinator's wall clock, the same
+interval elapsed for all three. In terms of internal progress, it did not.
 
-Consider the AgentClaw architecture [^4]: a coordinator agent — MARTIN (Machine Assisted Reasoning + Tactical Intelligence Network) — spawns sub-agents to handle parallel tasks via the A2A delegation protocol. These sub-agents do not merely run on different machines with slightly drifted wall clocks. They run with different model sizes (`gemma4:e4b` vs. larger OpenRouter-served frontier models), different context-window utilizations, different prompt complexities, and different reasoning chains. One sub-agent may complete its task in 200 milliseconds. Another, processing a similar nominal task with extended chain-of-thought reasoning, may consume 8 seconds. A third may be paused mid-execution, waiting on a tool call to a remote service.
+We use the term proper time for the per-agent measure of accumulated
+internal progress, and we borrow the German Eigenzeit as a compact label. The
+borrowing is terminological only. Section 4.1 states explicitly why we do not
+treat this as an analogy to relativistic time dilation and what we lose by
+declining that framing.
 
-From the orchestrator's perspective, *one minute has passed*. From the perspective of the three sub-agents, vastly different amounts of *subjective progress* have occurred. The fast agent has effectively lived several task-cycles while the slow one is still in its first reasoning step. Their proper times have diverged.
+The question is not how to eliminate heterogeneity in progress rates. It cannot
+be eliminated without sacrificing the heterogeneity that makes such systems
+useful. The question is whether a system that measures this quantity behaves
+differently from one that does not. Section 6 answers that question
+empirically, and the answer is yes, under a condition we can state precisely.
 
-This is not a bug to be patched with better clock synchronization. It is a structural property of any orchestration architecture that allows heterogeneous agents to operate semi-autonomously over heterogeneous compute. In AgentClaw, this is compounded by the presence of asynchronous Heartbeat and Dream-Cycle services [^4]: scheduled background tasks that operate on entirely different timescales than interactive chat — minutes to days for heartbeats, nightly for memory consolidation. Each of these services exists in a temporal frame disconnected from the foreground agent's frame, and from each other.
+1.1 The Core Claims in Non-Technical Terms
 
-The question, then, is not how to eliminate dilation. It cannot be eliminated without sacrificing the heterogeneity that makes such systems useful. The question is how to design systems that remain *coherent* in its presence.
+Hand the same assignment to three colleagues at 9:00 and ask for a report at
+9:05. Anna sketches three options and refines one. Ben is still reading the
+brief. Carla spent the interval on hold with a supplier. By the wall clock all
+three had five minutes; the amount of work lived through inside each head
+differs enormously. A manager who treats all three reports as equally
+deliberated is making decisions on work that has aged unevenly.
 
-This paper develops the analogy in six steps. Section 2 establishes why standard synchronization techniques from distributed systems fall short for LLM agents. Section 3 develops a conceptual framework for agent proper time, drawing on phenomenological accounts of internal time-consciousness as well as the relativistic notion of Eigenzeit, and proposes a transformation between agent reference frames. Section 4 grounds the framework in the AgentClaw case study, identifying four distinct sources of dilation in a running system and showing where dilation matters and where it can be safely ignored. Section 5 reports a preliminary empirical evaluation on the running reference implementation. Section 6 discusses implications for logging, debugging, and the user's trust in temporally opaque agent decisions. Section 7 concludes with a brief positioning of the work within a broader programme of *Sovereign Temporal Continuity* — the proposition that autonomous systems must be designed to remain coherent across time in a way that survives their original architects.
+That is claim two: systems should measure how much work each participant
+actually lived through, and doing so demonstrably improves who gets assigned
+what.
 
----
+Claim one is stranger. Suppose each colleague also received a stack of notes,
+every one stamped with a date, and suppose that reading and reconciling those
+dates were itself part of the five minutes. The bookkeeping would eat the work.
+For an LLM agent, this is not a metaphor. Reading the timestamps is not free,
+and it is not optional.
 
-## 2. Why Standard Synchronization Fails for LLM Agents
+1.2 Contributions
 
-The distributed systems community has spent five decades developing tools to manage time across nodes. The toolkit is mature: NTP for wall-clock synchronization, Lamport's happened-before relation for logical ordering, vector clocks for causality across concurrent processes, hybrid logical clocks (HLCs) for systems that need both physical and logical ordering, and protocols such as Paxos and Raft for consensus on event ordering. Spanner achieves global linearizability through TrueTime, exposing uncertainty bounds rather than a single timestamp [^3]. These tools are well-understood and battle-tested in production systems handling billions of transactions per day.
+An argument that the metadata/content distinction, which classical temporal
+   coordination presupposes, does not hold for LLM agents, together with the
+   observed failure mode this produces (§3).
+A formal definition of agent proper time, explicitly separated from
+   instantaneous pace, and an extension of vector clocks that carries both (§4).
+An implementation in a running multi-agent system, with an honest
+   implementation-status accounting (§5).
+An empirical evaluation including a degenerate-metric finding, a
+   direct measurement of proper-time divergence, a negative result, a
+   non-replication, and a decisive randomised replication at n = 200 (§6).
+A statement of the unresolved tension between contributions 1 and 2, which
+   we take to be the most important open problem the paper raises (§7).
 
-None of them address the problem this paper is concerned with.
+***
+2. Why Standard Synchronisation Is Necessary but Insufficient
 
-To see why, observe what these tools assume. They assume that the events being timestamped are computationally cheap and uniform: a database write, a message send, a state transition. The duration of the event itself is small relative to network latency, and the duration is roughly the same across nodes. Vector clocks order events; they do not measure the *internal* time of events. Lamport's happened-before relation captures that event $A$ causally preceded event $B$, not that the participant performing $A$ experienced more or less subjective time during $A$ than during a comparable event $A'$ on a peer node.
+The distributed systems toolkit for managing time is mature: NTP for wall-clock
+synchronisation, Lamport's happened-before relation for logical ordering [1],
+vector clocks for causality across concurrent processes [2, 3], hybrid logical
+clocks where both physical and logical ordering are needed [4], consensus
+protocols such as Paxos [6] and Raft [7] for agreement on event order, and
+TrueTime for global linearizability under explicit uncertainty bounds [5].
+These tools are battle-tested and remain necessary in agent systems.
 
-LLM agents violate every one of these assumptions.
+They are insufficient here, for four reasons rooted in what they assume.
 
-First, **the events are not cheap**. A single agent invocation may consume from 100 milliseconds (a small model answering a routed query without tool use) to 30 seconds or more (a large model performing chain-of-thought reasoning with multiple tool calls). The duration of the event is no longer dominated by network latency; it is dominated by the agent's own internal processing.
+The events are not computationally cheap. Classical primitives timestamp
+events whose duration is small relative to network latency: a write, a send, a
+state transition. A single LLM agent invocation ranges from roughly 100 ms for
+a small model answering a routed query to tens of seconds for a large model
+performing multi-step reasoning with tool calls [8, 9]. Event duration is
+dominated by internal processing, not by the network.
 
-Second, **the events are not uniform across agents**. In a heterogeneous system such as AgentClaw, where Ollama-served local models handle some tasks and OpenRouter-served frontier models handle others, the *expected* duration of a comparable task can differ by an order of magnitude depending on which agent receives the dispatch. This is a property of the system, not noise to be filtered.
+The events are not uniform across agents. In a heterogeneous system where
+locally served models handle some dispatches and remotely served frontier
+models handle others, the expected duration of a comparable task differs by an
+order of magnitude depending on routing. This is a designed property of the
+system, not noise to be filtered.
 
-Third, **the events have internal structure**. A vector clock can tell you that agent $A$'s response causally preceded agent $B$'s response. It cannot tell you that during the production of that response, agent $A$ went through six reasoning steps while agent $B$ went through two. From a coordination standpoint this may seem irrelevant. From a *correctness* standpoint — debugging a hallucination, attributing a decision to a specific reasoning path, evaluating whether sufficient deliberation occurred before an action — it is essential.
+The events have internal structure. A vector clock establishes that agent
+A's response causally preceded agent B's. It cannot express that A
+traversed six reasoning steps while B traversed two. For coordination this is
+irrelevant. For attribution, for debugging a hallucination, or for assessing
+whether sufficient deliberation preceded an action, it is not.
 
-Fourth, **the events are not always idempotent across temporal contexts**. An agent issuing the recommendation "send the email now" at 14:00 may issue a different recommendation at 16:00 given the same nominal input, because its memory state has shifted, its context has expanded, or upstream agents have produced new artifacts in the interval. Standard timestamping captures *when* the recommendation was issued; it does not capture the temporal context in which the recommendation made sense.
+The events are not idempotent across temporal contexts. An agent
+recommending "send the email now" at 14:00 may recommend otherwise at 16:00 on
+identical nominal input, because memory state has shifted or upstream agents
+have produced new artifacts. Standard timestamping records when a
+recommendation was issued, not the temporal context in which it made sense.
 
-The cumulative effect is that distributed systems primitives are necessary but insufficient for reasoning about time in LLM-agent systems. Vector clocks remain useful for establishing causality between agent actions. Heartbeats and timeouts remain useful for detecting hung agents. But none of these primitives capture the phenomenon at the centre of this paper: that two agents, both functioning correctly, can experience radically different amounts of subjective progress within the same wall-clock interval, and that this divergence has consequences for system behaviour that cannot be addressed by tightening clock synchronization. What is needed is a vocabulary that takes the divergence seriously, and a formalism that makes it tractable. The next section develops both, while making explicit where the proposed analogy holds and where it should not be pressed.
+To these four we add the observation of §1, which is of a different kind. The
+four above concern what classical primitives fail to capture. The fifth
+concerns what they inadvertently cause.
 
----
+***
+3. Timestamps as Interpretable Content
 
-## 3. A Framework for Agent Proper Time
+3.1 The Structural Claim
 
-We adopt the language of dilation as a productive analogy, not as a claim of physical isomorphism. Before introducing definitions, we name the bruchstellen — the points where the analogy to special relativity breaks — so that subsequent formalism is not mistaken for a stronger claim than it makes.
+Let a classical distributed process p carry logical clock value V(p). The
+value participates in the protocol layer: it is compared, merged, and
+transmitted. It does not participate in the application computation, because
+the protocol layer and the application layer are separate address spaces. A
+node computing balance -= amount does not consult its vector clock while
+doing so.
 
-### 3.1 Where the Analogy Breaks
+An LLM agent has one address space. Its state is a token sequence, and
+inference is a function over that entire sequence. If a retrieved memory
+carries the string 2026-03-14T09:22:11Z, that string occupies context
+positions and receives attention weight. There is no mechanism by which it can
+be present and inert.
 
-Three differences from special relativity are essential to acknowledge.
+Consequently, temporal annotation in an LLM agent system has two effects
+simultaneously: the intended coordination effect, and an unintended semantic
+effect on the agent's reasoning. The second effect scales with the number of
+annotations present in context, which in a memory-equipped agent scales with
+uptime.
 
-**No Lorentz invariance, no universal speed limit.** Special relativity rests on the postulate of a finite invariant speed $c$. The mathematics of dilation, the structure of the Lorentz transformation, and the geometry of spacetime all flow from this constant. There is no comparable invariant in LLM agent systems. The "speed" at which an agent processes tokens depends on hardware, model size, batching, prompt complexity, and the presence or absence of tool calls — none of which are universal. Compute latency is contextual, not constitutive. The analogy borrows the *idea* of frame-dependent time, not its underlying geometry.
+3.2 The Observed Failure Mode
 
-**No light cone, no clean causal topology.** In special relativity, the causal structure of spacetime is governed by the light cone: information cannot propagate faster than $c$, and this constrains which events can causally influence which others. LLM agent systems have no equivalent. Information flows through tool calls, memory recalls, and inter-agent dispatch in ways that can produce apparent retro-temporal coupling — for instance, when an agent recalls a memory written by a peer in what is, from the recalling agent's frame, the relative past, but which was authored in a different frame's relative future. Causality in such systems requires logical reconstruction, not geometric reading.
+The field observation quoted in §1 describes the resulting degradation. We
+decompose it into three mechanisms, all of which are consistent with known
+properties of transformer language models but which, to our knowledge, have not
+been discussed in the context of temporal coordination.
 
-**No reciprocity.** A central feature of special relativity is symmetric time dilation: from $A$'s frame, $B$'s clock runs slow; from $B$'s frame, $A$'s clock runs slow. The relation is reciprocal. The agent-time analogue is not. If a small local model finishes its reasoning step in 200 ms while a frontier model takes 8 seconds on a comparable task, the relation is asymmetric: the frontier model is "slower" in any meaningful sense, and the small model is not slower from the frontier model's frame. The dilation we describe is *anisotropic* and ordered; it is not a symmetric property of relative motion.
+Budget displacement. Timestamp reconciliation consumes context and
+generated tokens that would otherwise serve the task. The cost is not constant;
+it grows with the number of mutually inconsistent temporal references the
+agent must resolve.
 
-The analogy is therefore lexical and structural, not formal. We use it because it makes visible a phenomenon that the standard distributed-systems vocabulary obscures, and because it suggests forms of formalism — proper time, frame transformation — that turn out to be useful even when stripped of their relativistic underpinnings.
+Positional sensitivity. Retrieval-augmented models attend unevenly to
+context depending on position, with a well-documented degradation for material
+in the middle of long contexts [10]. Temporal annotations are therefore weighted
+by an accident of retrieval ordering rather than by relevance, and the agent's
+resulting sense of recency is a function of where a memory landed in the prompt.
 
-### 3.2 Defining Agent Proper Time
+Interpretive drift. Absolute timestamps require an anchor to be meaningful.
+An agent lacking a reliable representation of "now" will infer one, typically
+from the most salient temporal reference available. Errors in that inference
+propagate to every relative judgement the agent makes.
 
-Let an agent $a_i$ be a stateful process capable of producing reasoning outputs in response to inputs. We define the **proper time** of $a_i$, written $\tau_i$, as a monotonic function over agent-internal reasoning operations rather than over wall-clock time:
+3.3 Why This Cannot Be Fixed by Better Clocks
 
-$$\tau_i(t) = \sum_{k=1}^{N(t)} w_k$$
+The four insufficiencies in §2 are addressable in principle by richer
+primitives, and §4 proposes one. The problem in this section is not of that
+kind. Improving timestamp accuracy does not reduce interpretive load; a more
+precise timestamp is the same number of tokens carrying the same invitation to
+reason. Increasing timestamp density makes the problem worse. The only
+mitigations available operate on what reaches the context, not on *what the
+clock says*:
 
-where $N(t)$ is the number of internal operations the agent has completed by wall-clock time $t$, and $w_k$ is the *weight* of operation $k$ in the agent's reasoning. Internal operations include token generations, tool invocations, memory lookups, and reasoning-step transitions. Weights may be uniform ($w_k = 1$ for all $k$, recovering an operation count) or non-uniform (giving more weight to expensive operations such as long tool calls).
+Out-of-band carriage. Temporal metadata travels with messages at the
+   protocol layer but is stripped before context assembly. The orchestrator
+   reasons about time; the agent does not see it.
+Relativisation. Absolute timestamps are replaced at context-assembly
+   time with pre-computed relative expressions ("14 minutes before this
+   request"), which removes the anchoring inference.
+Aggregation. Per-entry timestamps are replaced by a single ordering
+   signal for a retrieved set, so that n memories contribute one temporal
+   fact rather than n.
 
-Three properties of $\tau_i$ matter:
+We have not evaluated these mitigations, and we regard their comparison as the
+most valuable follow-up work this paper suggests. Section 7 explains why the
+question is more urgent than it may appear.
 
-1. **Monotonicity.** $\tau_i$ never decreases. An agent's proper time always advances forward, even when wall-clock time stalls (during a paused tool call, for instance).
-2. **Frame-locality.** $\tau_i$ is meaningful only from within $a_i$'s frame. Comparing $\tau_i$ values to $\tau_j$ values directly is a category error; comparison requires a transformation (§3.3).
-3. **Independence from wall-clock time.** Two agents may share the same wall-clock interval $[t_0, t_1]$ and yet have radically different $\Delta\tau_i$ and $\Delta\tau_j$ over that interval.
+***
+4. Agent Proper Time and the Causal-Dilation Clock
 
-This definition deliberately avoids tying proper time to any particular clock or any particular operation. It is a slot in the formalism, to be filled by implementation choice: in AgentClaw, $\tau$ for an agent is currently approximated by the count of completed reasoning steps plus tool calls, weighted by an estimated cost factor per operation type.
+4.1 A Note on Terminology and a Rejected Framing
 
-### 3.3 Frame Transformation
+An earlier revision of this work framed the phenomenon of §1 as an analogy to
+relativistic time dilation, with agents occupying reference frames and a
+Lorentz-like transformation between them. We have removed that framing, and the
+reasons are worth recording, because the analogy is intuitively appealing and
+we expect others to reach for it.
 
-To reason about events across agent frames, we require a transformation function
+Special relativity rests on three features, none of which survives transfer to
+this domain. There is no invariant speed: token throughput depends on hardware,
+model size, batching, and prompt complexity, so nothing plays the role of c,
+and the geometry that follows from c does not follow here. There is no light
+cone: information propagates through tool calls, memory recalls, and dispatch
+in patterns that permit apparent retro-temporal coupling, so causal structure
+must be reconstructed logically rather than read off a geometry. And there is
+no reciprocity: if a small local model completes a reasoning step in 200 ms
+while a frontier model takes 8 seconds, the relation is asymmetric and ordered,
+not the symmetric relation of relative motion.
+
+An analogy that loses its invariant, its causal geometry, and its symmetry is
+not an analogy. It is a vocabulary. We retain one word from that vocabulary,
+Eigenzeit (proper time), because it names a quantity we define independently
+below and because no compact English equivalent exists. Readers should
+understand it as a label, not as a claim of structural correspondence. Nothing
+in §§4 to 7 depends on relativity, and the empirical results of §6 are
+independent of it.
+
+4.2 Defining Proper Time
+
+Let agent aᵢ be a stateful process producing reasoning outputs in response to
+inputs. Define the proper time of aᵢ, written τᵢ, as a monotonic function
+over agent-internal operations rather than over wall-clock time:
+
+$$\tau_i(t) = \sum_{k=1}^{N_i(t)} w_k$$
+
+where Nᵢ(t) is the number of internal operations aᵢ has completed by
+wall-clock time t, and w<sub>k</sub> is the weight of operation k.
+Internal operations include token generations, tool invocations, memory
+lookups, and reasoning-step transitions. Weights may be uniform (w<sub>k</sub>
+= 1, recovering an operation count) or cost-proportional.
+
+Three properties hold by construction:
+
+Monotonicity. τᵢ never decreases, and advances even when wall-clock
+   progress stalls, as during a suspended tool call.
+Locality. τᵢ is meaningful within aᵢ's own accounting. Direct
+   comparison of τᵢ against τⱼ requires a transformation (§4.3).
+Wall-clock independence. Two agents may share an interval [t₀, t₁]
+   and accumulate substantially different Δτ over it.
+
+The definition deliberately leaves the operation set and the weighting to
+implementation. In LogpyClaw v3, τ counts protocol-level operations (dispatch,
+handle, delegation ticks); §6.2 discusses the granularity cost of this choice.
+
+4.3 Separating Cumulative Progress from Instantaneous Pace
+
+τ as defined is cumulative and therefore says nothing about current rate. An
+agent idle for an hour has the same τ as it did an hour ago, which is correct,
+but a system reasoning about delegation needs to know how fast the agent is
+now.
+
+We therefore define a second, independent quantity: the pace πᵢ, an
+exponentially weighted moving average of operations per unit wall time over
+recent operations. The two quantities have different merge semantics. τ merges
+by component-wise maximum, as a vector clock does, because accumulated progress
+is monotone and non-revisable. π merges by causal recency, because a stale rate
+estimate is worse than no estimate.
+
+Section 6.1 reports what happens when this separation is absent. The finding is
+the most direct empirical support in the paper for a definitional choice, and it
+was discovered by failure rather than by design.
+
+For comparison across agents we require a transformation
 
 $$\Phi_{i \to j}: \tau_i \mapsto \tau_j$$
 
-that maps a proper-time value in agent $a_i$'s frame to its corresponding value in $a_j$'s frame. Unlike the Lorentz transformation, $\Phi_{i \to j}$ is **not** derivable from first principles; it is a heuristic estimate based on the relative computational profiles of $a_i$ and $a_j$.
+which, unlike a Lorentz transformation, is not derivable from first principles.
+It is a heuristic estimate from measured relative operation costs. A scalar
+first approximation is Φ(τᵢ) ≈ γᵢⱼ · τᵢ, with γᵢⱼ the ratio of expected
+per-operation costs. If aᵢ averages 50 ms per step and aⱼ averages 2000 ms,
+then γᵢⱼ ≈ 0.025. The transformation is asymmetric in general
+(γᵢⱼ ≠ 1/γⱼᵢ under non-uniform weights).
 
-A simple first approximation is a scalar dilation factor:
+Section 6.5 shows that scalar γ is insufficient in one specific and practically
+important respect: it discards dispersion, and dispersion is what determines
+whether a decision near a deadline boundary survives execution.
 
-$$\Phi_{i \to j}(\tau_i) \approx \gamma_{ij} \cdot \tau_i$$
+4.4 The Causal-Dilation Clock
 
-where $\gamma_{ij}$ is the ratio of expected per-operation costs between the two agents. If $a_i$ is a small local model averaging 50 ms per reasoning step, and $a_j$ is a frontier model averaging 2000 ms per reasoning step, then $\gamma_{ij} \approx 0.025$: one unit of $\tau_i$ corresponds to roughly $0.025$ units of $\tau_j$. The transformation is asymmetric ($\gamma_{ij} \neq 1/\gamma_{ji}$ in general, given different operation weights), confirming the absence of reciprocity noted in §3.1.
+Standard vector clocks capture order but not experience. We extend the clock
+with a parallel dilation vector D = (τ₁, ..., τ<sub>n</sub>) alongside the
+standard vector V. The pair (V, D) we call a Causal-Dilation Clock
+(CDC).
 
-More sophisticated transformations would account for operation-type heterogeneity (a tool call in $a_i$ does not map cleanly onto a tool call in $a_j$), context-window state, and historical drift between the frames. We leave such refinements as future work; the scalar form is sufficient for the purpose of this paper.
+Two events eᵢ, eⱼ with clocks (Vᵢ, Dᵢ), (Vⱼ, Dⱼ) stand in one of
+four relations:
 
-### 3.4 The Causal-Dilation Clock
+#	Relation	Condition	Interpretation
+1	ORDERED	Vᵢ ≤ Vⱼ and Φ(Dᵢ) ≤ Dⱼ	Classical happened-before, temporally consistent
+2	CAUSAL_DRIFT	Vᵢ ≤ Vⱼ but Φ(Dᵢ) ≰ Dⱼ	Causally ordered, but the successor frame accumulated less progress than expected
+3	CONCURRENT_DRIFT	Vᵢ ∥ Vⱼ, D values diverge substantially	No causal dependency, materially different work performed
+4	INCONSISTENT	V and D disagree on order	Suggests clock corruption or a dropped update
+	Relation 4 is the practically valuable one: with both V and D instrumented,
+temporally implausible reports become detectable, for example an agent claiming
+three reasoning steps in an interval during which a comparable peer completed
+thirty. Section 6.3 reports that we have not yet observed relations 2 to 4 in
+production traffic, and why that null result is a measurement of our own
+topology rather than a disconfirmation.
 
-Standard vector clocks track causality across distributed processes. An event in process $i$ at vector-clock value $V_i = (v_1, v_2, \ldots, v_n)$ "happened before" an event in process $j$ at $V_j$ if $V_i \leq V_j$ component-wise and $V_i \neq V_j$. This captures *order* but not *experience*: it tells us $A$ preceded $B$, but not how much subjective progress $A$ accumulated relative to $B$.
+4.5 Reference Implementation Sketch
 
-We propose extending the vector clock with a parallel **dilation vector** $D = (\tau_1, \tau_2, \ldots, \tau_n)$ tracking the proper time of each agent. The combined construct is a pair $(V, D)$ — a **Causal-Dilation Clock** — that captures both ordering and frame-relative experience.
-
-Two events $e_i$ and $e_j$ with clocks $(V_i, D_i)$ and $(V_j, D_j)$ stand in one of four relations:
-
-1. **Causally and temporally ordered:** $V_i \leq V_j$, and $D_i \leq D_j$ in the relevant components after frame transformation. The classical happened-before case.
-2. **Causally ordered, temporally divergent:** $V_i \leq V_j$, but $\Phi_{i \to j}(D_i) \not\leq D_j$. Event $e_i$ caused $e_j$ in the orchestration sense, but the agents' proper times have drifted such that $e_j$'s frame has accumulated less subjective progress than expected.
-3. **Concurrent in vector clock, divergent in dilation:** $V_i \parallel V_j$ (concurrent), but $D$ values differ substantially. Two agents have done genuinely different amounts of work despite no causal dependency.
-4. **Inconsistent:** Vector clock and dilation vector disagree on order in a way suggesting clock corruption or a missed update.
-
-The fourth relation is the practically important one: in a system instrumented with both $V$ and $D$, it becomes detectable when an agent's reported events are temporally implausible — for instance, an agent claiming to have completed three reasoning steps in the same interval during which a peer of comparable capability completed thirty.
-
-### 3.5 Pseudocode Sketch
-
-A minimal extension to a vector-clock-based dispatch protocol:
-
-```python
 @dataclass
 class CausalDilationClock:
-    vector: dict[AgentId, int]      # standard vector clock
-    dilation: dict[AgentId, float]  # per-agent proper time
+    vector: dict[AgentId, int]        # standard vector clock
+    dilation: dict[AgentId, float]    # cumulative proper time tau
+    pace: dict[AgentId, PaceEstimate] # EWMA rate, merged by recency
 
-    def tick(self, agent_id: AgentId, op_weight: float = 1.0):
-        """Called by agent on every internal reasoning operation."""
+    def tick(self, agent_id: AgentId, op_weight: float = 1.0,
+             wall_delta: float | None = None) -> None:
+        """Called by an agent on every internal reasoning operation."""
         self.vector[agent_id] = self.vector.get(agent_id, 0) + 1
         self.dilation[agent_id] = self.dilation.get(agent_id, 0.0) + op_weight
+        if wall_delta is not None:
+            self.pace[agent_id] = self.pace[agent_id].update(op_weight, wall_delta)
 
-    def merge(self, other: "CausalDilationClock"):
+    def merge(self, other: "CausalDilationClock") -> None:
         """Called on receipt of a message from another agent."""
         for a, v in other.vector.items():
             self.vector[a] = max(self.vector.get(a, 0), v)
         for a, d in other.dilation.items():
-            # dilation values do not max-merge; they are frame-local.
-            # we keep both views, transformed when compared.
+            # tau is monotone and non-revisable: max-merge is sound
             self.dilation[a] = max(self.dilation.get(a, 0.0), d)
-
-    def transform(self, source: AgentId, target: AgentId,
-                  gamma: dict[tuple[AgentId, AgentId], float]) -> float:
-        """Heuristic mapping of source's proper time into target's frame."""
-        return self.dilation[source] * gamma.get((source, target), 1.0)
-```
-
-The implementation cost is modest: a few additional fields per dispatched message and per agent state. The benefit, as developed in §4 and §5, is a system that can detect, log, and reason about temporal divergences that are otherwise invisible.
-
----
-
-## 4. Case Study: Temporal Dilation in AgentClaw
-
-We now ground the framework in AgentClaw, a running multi-agent orchestration system [^4] developed by the author. AgentClaw is built on Python 3.14, FastAPI, NiceGUI 3.10, SQLModel, Qdrant for vector memory, and serves Ollama-local and OpenRouter-remote LLMs through a unified dispatch layer. It currently comprises 21 FastAPI routers, 13 UI pages, 23 skills, and over eight background services. The system was not designed with time dilation in mind; the framework presented here emerged from observing operational problems and asking what would have prevented them.
-
-### 4.1 Implementation Status
-
-Throughout this section, we mark each component as either ✓ implemented and operational, or ⚠ conceptual and not yet realised. This separation matters for honest assessment: AgentClaw demonstrates that the *substrate* for time-dilation reasoning exists, not that the framework is fully realised.
-
-| Component                                  | Status        |
-|--------------------------------------------|---------------|
-| A2A delegation protocol (XML tasklists)    | ✓ Implemented |
-| Heartbeat service (minutes to days)        | ✓ Implemented |
-| Dream-Cycle nightly memory consolidation   | ✓ Implemented |
-| M2M peer dispatch (MARTIN network)         | ✓ Implemented |
-| Per-agent SQLite history with timestamps   | ✓ Implemented |
-| Wall-clock-only logging                    | ✓ Implemented |
-| Explicit `reference_now` per `PlanStep`    | ✓ Implemented |
-| `TimeProvider` injection across agents     | ✓ Implemented |
-| Causal-Dilation Clock per dispatch         | ✓ Implemented |
-| Drift detection and re-sync policy         | ✓ Implemented |
-| Eigenzeit-aware logging tuple              | ✓ Implemented |
-
-The conceptual components are the subject of an ongoing refactor informed by the present analysis.
-
-### 4.2 Four Sources of Dilation
-
-We identify four structurally distinct sources of temporal dilation in AgentClaw, each producing a different class of coherence problem.
-
-**Source 1: Heterogeneous model latency in A2A dispatch.** ✓ The A2A protocol allows an agent to delegate sub-tasks to other agents via XML tasklists, with `@Mention` syntax in chat or programmatic dispatch. Sub-agents run on different models — `gemma4:e4b` locally for cheap tasks, OpenRouter-served frontier models for difficult reasoning. A delegating agent that issues parallel sub-tasks to two such sub-agents will receive responses on radically different timescales: the local model in roughly 200 ms per reasoning step, the frontier model in 1–8 seconds per step. From the orchestrator's wall-clock frame, *the same elapsed interval* contains very different amounts of subjective progress in the two sub-agents. This is the prototypical case of asymmetric dilation introduced in §3.
-
-**Source 2: Asynchronous Heartbeats decoupled from interactive time.** ✓ AgentClaw includes a Heartbeat service that runs scheduled tasks at intervals from minutes to days. A heartbeat firing every six hours has no meaningful relation to the chat-foreground frame. From the perspective of a user interacting with an agent in chat, four heartbeat cycles may pass during a single conversation; from the heartbeat's perspective, hundreds of chat turns may pass between two of its firings. The two frames coexist but their proper times advance on entirely different scales. Without explicit frame tracking, events from these two domains commingle in shared memory (Qdrant), and an agent recalling a memory cannot tell whether it was authored in its own conversational frame or written by a heartbeat hours earlier.
-
-**Source 3: Dream-Cycle consolidation operating on past memory.** ✓ The Dream-Cycle is a nightly background service that re-organises and consolidates memory accumulated during the day. It re-reads, summarises, and re-embeds memory entries — that is, it modifies, in the system's present, the records of the system's past. From the perspective of an agent that recalls one of these consolidated memories during the next day, the memory has *changed* since it was last read, even though the original event has not. This is a form of retro-temporal modification that has no analogue in standard distributed systems. It cannot be modelled by versioning alone; it requires recognising that the Dream-Cycle operates in a *frame* whose proper time runs backwards relative to the foreground frame's notion of memory permanence.
-
-**Source 4: M2M peer dispatch across MARTIN nodes.** ✓ MARTIN is the peer-to-peer layer of AgentClaw, allowing nodes on different machines to dispatch tasks to each other. Each MARTIN node has its own clock, its own load, its own dilation profile. A task dispatched to a remote node may complete with substantial proper-time divergence relative to the dispatching node, compounded by network latency. This is the case where the standard distributed-systems toolkit (vector clocks, NTP) is most clearly *necessary but insufficient*: it captures the network-level ordering, but says nothing about the proper-time divergence between heterogeneous MARTIN nodes.
-
-### 4.3 Operationalisation
-
-The conceptual extensions outlined in §3 map to AgentClaw as follows.
-
-**Extending `PlanStep`.** ⚠ The current `PlanStep` representation in A2A tasklists carries an implicit creation timestamp. We propose extending it explicitly:
-
-```python
-@dataclass
-class PlanStep:
-    id: str
-    created_at: datetime              # wall-clock at creation
-    reference_now: datetime           # planning agent's Eigenzeit at creation
-    parent_reference_now: datetime | None  # inherited from parent at spawn
-    deadline: datetime | None         # absolute, not relative
-    action: dict
-```
-
-The `parent_reference_now` field is the explicit operationalisation of frame inheritance: when a sub-agent is spawned, it does not start with a fresh `datetime.now()`; it starts in the temporal context of its parent, with its own proper time advancing from there.
-
-**TimeProvider injection.** ⚠ Each agent receives a `TimeProvider` at spawn rather than calling `datetime.now()` directly. A `TimeProvider` exposes:
-
-- `now()`: the agent's reference time (its Eigenzeit-now)
-- `wall_now()`: the actual system clock (used only for logging and re-sync)
-- `dilation()`: an estimate of the agent's dilation factor relative to the orchestrator
-- `fork(new_context)`: produces a child `TimeProvider` for spawning a sub-agent
-
-The discipline that follows is simple but strict: agent code must not call `datetime.now()` directly. All temporal access goes through the injected provider. This makes frame-aware behaviour the default, and frame-blind behaviour an explicit (and reviewable) deviation.
-
-**Logging.** ⚠ Every event logged includes both `wall_clock` and `agent_reference_now`, plus the agent identifier and dilation context:
-
-```
-(wall_clock, agent_reference_now, agent_id, dilation_context, event_type, payload)
-```
-
-When the two timestamps diverge, drift is visible. This makes possible drift visualisation per agent ("timeline per agent" plots), forensic analysis of race conditions, and detection of the inconsistent fourth case identified in §3.4. Integration with logpy.com — a logging service authored by the same group, designed for autonomous agent observability — is the planned implementation path.
-
-**Re-synchronisation policy.** ⚠ When a sub-agent's response arrives at its parent with substantial drift, the parent has three options: *recalibrate* (adopt the child's reference_now), *reject* (demand re-execution with updated context), or *log only* (accept with logging). For AgentClaw, the proposed default is log-only; for actions with external side effects (sending email, financial transactions, public posts), the proposed default is reject-on-drift-above-threshold. The choice is per-action-type and is explicit in the action's metadata.
-
-### 4.4 What This Buys Us
-
-Three concrete capabilities follow from operationalising the framework.
-
-First, **reproducibility**. A plan with explicit `reference_now` and `parent_reference_now` can be re-played against historical state, because the temporal context is preserved alongside the action. Without these fields, replays are subtly wrong: they execute against present-frame `datetime.now()` rather than the frame in which the original decision was made.
-
-Second, **observability of drift**. The logging tuple makes drift a first-class signal. An operator can ask: "which agents are running in proper-time frames substantially divergent from the orchestrator?" — and get an answer. Currently in AgentClaw, this question cannot be asked, because the data needed to answer it is not recorded.
-
-Third, **trust calibration**. For users interacting with agents whose decisions depend on context, the temporal context is part of the provenance. An action recommended by an agent whose proper time has drifted substantially from the user's current frame deserves more scrutiny than one issued in a freshly-synchronised frame. The Causal-Dilation Clock makes this distinction available to downstream consumers, including the user interface.
-
-These capabilities are not new in the abstract. Distributed databases have offered reproducibility, observability, and trust signals for decades. What is new is recognising that for LLM agent systems, the *temporal* axis of these capabilities cannot be reduced to wall-clock or vector clocks alone, and that the missing piece is exactly what we have called proper time.
-
----
-
-## 5. Preliminary Evaluation
-
-The framework is implemented in LogpyClaw v3 (see *Reference Implementation*).
-This section reports what happened when the concepts met a running system:
-one metric degeneration observed in real traces, one direct measurement of
-proper-time divergence, one honest negative result, and a controlled
-experiment on deadline-driven delegation — including a replication attempt
-that partially failed and taught us more than the pilot did, and a second,
-decisive replication that isolated the effect the first two had only hinted
-at. All data comes
-from the system's signed mission log (ML-DSA-65 hash chain): 464 missions and
-1,719 inter-agent messages at the time of analysis, 72% of them signed. Most
-of this corpus is development and test traffic; we state that openly and
-treat the numbers accordingly. Experiment scripts and raw results are
-published alongside the implementation (`experiments/dragon*.py`).
-
-### 5.1 A naive rate metric degenerates in practice
-
-The first implementation approximated each agent's pace as a lifetime average
-(operations completed divided by uptime). Across 1,697 legacy messages this
-metric collapsed: median recorded rates of 0.001–0.003 ops/s for every agent,
-with idle agents drifting asymptotically toward zero. Apparent "dilation
-spreads" of five orders of magnitude between agents turned out to be
-artifacts of the metric, not properties of the system. This is direct
-empirical support for separating the two quantities the framework defines:
-cumulative proper time τ (monotonic, merged by max) and instantaneous pace
-(an EWMA over recent operations, merged by causal recency). A single number
-conflating them measures uptime, not experience.
-
-### 5.2 Proper-time divergence is real and measurable
-
-Once the τ/pace separation went live, ordinary missions immediately exhibited
-the phenomenon §1 predicts. Three orchestration missions routing work from a
-fast coordinator (Groq-served Llama) to a slow worker (Claude Opus via CLI):
-
-| Mission | Wall time | τ coordinator | τ worker | Ratio |
-|---|---|---|---|---|
-| `mis_274e87fe` | 384.5 s | 6.0 | 1.0 | 6.0× |
-| `mis_d18a03bc` | 144.1 s | 10.0 | 3.0 | 3.3× |
-| `mis_4783a34e` | 600.0 s | 4.0 | 2.0 | 2.0× |
-
-Identical wall-clock windows, up to 6× divergence in lived time. Caveat: τ
-here counts protocol-level operations (dispatch, handle, delegation ticks),
-not LLM reasoning steps; the granularity is coarser than the ideal of §3.2.
-
-### 5.3 An honest negative result
-
-All 849 classifiable request/response pairs in the corpus relate as ORDERED;
-no CAUSAL_DRIFT and no INCONSISTENT was observed. This is expected rather
-than disconfirming: sequential dispatch produces causal order by
-construction. The interesting relations (CONCURRENT_DRIFT and the
-faction-aware reclassifications) require genuinely parallel branches, which
-the orchestrator only recently gained. The classifier has not yet met the
-traffic it was built for. We flag this as the primary gap between
-implementation and validation. Read as a diagnosis, the uniform ORDERED relation is
-itself a measurement of the system’s current topology: LogpyClaw v3 today
-operates as a centrally orchestrated hub-and-spoke system — closer to an
-agent manager with an unusually rich protocol than to an emergent
-multi-agent system. The protocol (per-message clocks, directed trust,
-adversarial bridges) is built for peer traffic that the dispatcher does not
-yet generate; closing that gap is the roadmap, and this classifier will be
-its measuring instrument.
-
-### 5.4 Experiment: does temporal self-knowledge change decisions?
-
-To test whether proper-time awareness changes *decisions* rather than just
-logs, we built a real-time delegation scenario on the live system. A slow
-agent (the "knight", a local Ollama model, ~6–8 s per action) must save a
-player from a dragon arriving in T real seconds. It chooses between acting
-itself (two of its own actions) or delegating to a fast agent (the "mage",
-Groq-served, ~0.4 s per action; one knight action to call, one mage action to
-cast, sometimes plus an announced exhaustion cooldown that makes delegation
-slower than acting). The chosen option is then *actually executed* against
-the wall clock; survival means finishing before T. In half the trials the
-decision prompt contains the measured per-action times of both agents
-("temporal self-knowledge"); the other half receives an otherwise identical
-prompt. The cooldown, when present, is stated in both conditions — only the
-*rates* are exclusive to the treatment arm.
-
-**Pilot (n=20).** Survival 5/10 with temporal context vs. 3/10 without.
-Against a post-hoc oracle computed from observed true costs, the context arm
-decided 7/7 winnable trials correctly, the control arm 3/5. The only two
-trials lost *through a wrong choice* both occurred in the control arm. A
-methodological by-product: the injected time sense was itself miscalibrated
-by ~9× (one-shot measurement with short prompts vs. real action costs) and
-still helped — the decision only required the ordinal fact that the mage is
-faster. The 9× drift of a static self-estimate is precisely the failure mode
-§3 predicts, and motivates continuously updated rates.
-
-**Scaled run (n=60, improved calibration).** With rolling per-action medians
-(the EWMA principle at action granularity) and deadlines drawn from observed
-costs, the survival effect did **not** replicate: 18/30 with context vs.
-21/30 without. Decomposing the trials explains why, and the decomposition is
-more instructive than the pilot:
-
-- *Trials without cooldown* (delegation obviously optimal): both arms chose
-  delegation in 33/33 trials. The ordinal fact "the mage is faster" was
-  inferable from the scenario framing alone; the treatment information was
-  never exclusive, so it could not produce a difference.
-- *Trials with cooldown* (the arithmetic flips): the context arm switched
-  correctly to acting itself in 12/14 trials, the control arm in 8/13 —
-  directionally consistent with the pilot, exactly where the information was
-  exclusive. (Small samples; we do not claim significance.)
-- *Why survival still favored the control arm*: 9 deaths in the context arm
-  occurred despite an estimate-correct choice, versus 5 in the control arm.
-  The knight's latency is heavy-tailed; deadlines drawn near the decision
-  boundary turn correctly chosen self-action into a coin flip on latency
-  spikes. The arm that more often correctly chose the expensive option was
-  punished more often by execution variance. Survival, as an endpoint,
-  measured the latency lottery rather than the decision.
-
-### 5.5 What the experiment taught us
-
-Three design lessons, each of which feeds back into the framework:
-
-1. **Exclusivity.** A time-sense can only show value where temporal facts are
-   not inferable from static framing. Future runs must randomize *who* is
-   faster, so that one memorized bit cannot substitute for measurement.
-2. **Endpoint choice.** Decision correctness, not survival, is the primary
-   endpoint a time-sense controls; outcome metrics are confounded by
-   execution variance.
-3. **Point estimates are not a time sense.** A median is not a Bauchgefühl.
-   The variance-driven deaths show that useful temporal self-knowledge must
-   carry dispersion, not just central tendency — an agent should know that it
-   *usually* makes it in 12 seconds, and how wide "usually" is. This extends
-   the framework: the dilation component of the Causal-Dilation Clock should
-   eventually track distributional summaries of proper-time rates, not
-   scalars.
-
-### 5.6 Decisive replication with randomized roles (n=200)
-
-The two lessons above specify an experiment, and we ran it. Identities are
-neutral ("Blue" and "Red"); each trial randomly binds one name to a fast
-backend (Groq-served Llama, ~0.5 s per action) and the other to a slow one
-(local Ollama gemma, ~3–15 s per action), with both actors given *identical*
-action prompts so the latency gap is purely a property of the backend, not the
-task. Which actor is faster therefore flips unpredictably between trials and
-cannot be guessed from role priors — the exclusivity condition of §5.5(1) made
-concrete. A commander (Groq Llama) must dispatch exactly one actor to stop a
-dragon arriving in T seconds. The treatment arm's prompt states the measured
-per-action time of each actor; the control arm sees only the neutral names,
-otherwise identical. The deadline is set to the geometric mean of the two
-option costs — far from either boundary — so that execution variance cannot
-flip the ground truth (§5.5(2), §5.5(3)). The primary endpoint is decision
-correctness against a per-trial oracle (did the commander pick the actor that
-actually meets the deadline?); survival is secondary. 100 trials per arm,
-strictly alternating; per-action times are live rolling medians.
-
-| Arm | Decision correct | Survival |
-|---|---|---|
-| Temporal self-knowledge | **100 / 100 (100%)** | 95 / 100 |
-| Control (neutral roles) | 55 / 100 (55%) | 57 / 100 |
-
-With the measured time-sense the commander identified the deadline-meeting
-actor in every trial; without it, 55/100 — indistinguishable from the 50% a
-no-information chooser achieves once the faster actor is randomized (Fisher
-exact, two-sided *p* ≈ 9 × 10⁻¹⁷). Survival followed the decisions this time —
-95% vs. 57% — because the buffered deadlines removed the latency lottery that
-had confounded the n=60 survival endpoint. The contrast with that
-non-replicating run is itself the result: the effect appears exactly when, and
-only when, the temporal information is *exclusive*. Where "who is faster"
-cannot be read off the framing, a continuously measured proper-time rate is
-the difference between perfect and chance-level delegation. This is the
-clearest evidence we have that the framework's central claim — that a machine
-sense of time changes decisions, not just logs — holds on a running system.
-
-### 5.7 Threats to validity
-
-Single machine, single operator, mostly test traffic; the game scenario is
-synthetic even though all latencies are real; τ granularity is protocol-level;
-sample sizes are small. The evaluation is preliminary by design: its purpose
-is to demonstrate that the framework's claims are *testable on a running
-system*, and to report the first such tests — including the parts that did
-not work — honestly.
-
----
-
-## §6 Implications — *to be written*
-
-## §7 Conclusion: Sovereign Temporal Continuity — *to be written*
-
----
-
-## References
-
-[^1]: Lamport, L. (1978). Time, clocks, and the ordering of events in a distributed system. *Communications of the ACM*, 21(7), 558–565.
-
-[^2]: Mattern, F. (1989). Virtual time and global states of distributed systems. *Parallel and Distributed Algorithms*, 215–226.
-
-[^3]: Corbett, J. C., et al. (2013). Spanner: Google's globally distributed database. *ACM Transactions on Computer Systems*, 31(3), 1–22.
-
-[^4]: Dillenberg, H. G. O. (2026). AgentClaw — a local multi-agent AI system. https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/
+        for a, p in other.pace.items():
+            # a rate is only as good as its recency: prefer the newer observation
+            if p.observed_at > self.pace.get(a, PaceEstimate.EMPTY).observed_at:
+                self.pace[a] = p
+
+The per-message cost is a small fixed number of fields. The benefit, developed
+in §6, is a system that can detect and act on divergences that are otherwise
+invisible.
+
+***
+5. Implementation
+
+The framework is implemented in LogpyClaw v3, a CDC-native multi-agent
+system by the same author, successor to the AgentClaw codebase in which the
+original field observation was made. The CDC ships as a mandatory field on every
+inter-agent message (backend/core/cdc.py); τ is tracked per agent alongside an
+EWMA pace estimate; cross-faction drift is classified before logging. The
+system runs on Python 3.14, FastAPI, SQLModel, and Qdrant for vector memory,
+serving locally hosted and remotely served models through a unified dispatch
+layer.
+
+Source: <https://github.com/Jeuners/logpyclaw>
+Background: <https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/>
+
+5.1 Implementation Status
+
+We distinguish three states, and we treat this table as a claim subject to the
+same scrutiny as the empirical results.
+
+Component	Status
+A2A delegation protocol (XML tasklists)	Implemented
+Heartbeat service (minutes to days)	Implemented
+Nightly memory consolidation	Implemented
+Peer-to-peer node dispatch	Implemented
+Per-agent history with wall-clock timestamps	Implemented
+Causal-Dilation Clock on every dispatch	Implemented
+Proper time τ per agent	Implemented
+EWMA pace estimate per agent	Implemented
+Drift classification (relations 1 to 4)	Implemented
+Signed mission log (ML-DSA-65 hash chain)	Implemented
+reference_now / parent_reference_now on plan steps	Implemented, tested
+TimeProvider injection replacing direct clock access	Implemented, tested
+Dual-timestamp logging tuple	Implemented, tested
+Re-synchronisation policy per action type	Implemented
+Distributional pace summaries (§6.5)	Planned
+Context-assembly mitigations (§3.3)	Planned
+	The frame-inheritance mechanism deserves a note, because it is the component
+that most directly encodes the framework's central commitment. When a sub-agent
+is spawned it does not begin with a fresh clock read. It inherits
+parent_reference_now from the dispatching agent and advances its own proper
+time from there, so that the temporal context in which a plan was formed travels
+with the plan rather than being reconstructed at execution time. The
+accompanying discipline is that agent code does not call the system clock
+directly; all temporal access is routed through an injected TimeProvider
+exposing now(), wall_now(), pace(), and fork(). This makes frame-aware
+behaviour the default and frame-blind behaviour an explicit, reviewable
+deviation.
+
+Two components remain unbuilt, and both are consequences of findings reported
+below rather than of the original design: distributional rather than scalar pace
+summaries, which §6.5 shows to be necessary, and the context-assembly
+mitigations of §3.3, whose absence is the subject of §7.
+
+5.2 Four Sources of Divergence
+
+Heterogeneous model latency in delegation. Sub-agents run on different
+backends: small local models for cheap dispatches, remotely served frontier
+models for difficult reasoning. A delegating agent issuing parallel sub-tasks
+receives responses on timescales differing by an order of magnitude. Within one
+elapsed coordinator interval, the two sub-agents accumulate very different
+progress. This is the prototypical case.
+
+Asynchronous heartbeats decoupled from interactive time. Scheduled tasks
+run at intervals from minutes to days. Four heartbeat cycles may elapse during
+a single conversation; hundreds of conversational turns may elapse between two
+firings. Both write to shared memory, and an agent recalling an entry cannot,
+without frame annotation, determine which regime authored it.
+
+Nightly consolidation operating on past memory. The consolidation service
+re-reads, summarises, and re-embeds entries accumulated during the day. It
+modifies, in the system's present, the records of the system's past. An agent
+recalling a consolidated memory the following day encounters a record that has
+changed although the underlying event has not. Versioning alone does not model
+this, because the question is not which version is current but which frame
+authored the modification.
+
+Peer dispatch across nodes. Each node has its own clock, load, and cost
+profile. Network-level ordering is handled by classical primitives; the
+progress divergence between heterogeneous nodes is not.
+
+***
+6. Evaluation
+
+All observational data come from the system's signed mission log: 464 missions
+and 1,719 inter-agent messages at time of analysis, 72 % of them signed. Most of
+this corpus is development and test traffic, and we treat it accordingly.
+Experiment scripts and raw results are published alongside the implementation
+(experiments/).
+
+Statistical reporting. Two-group comparisons use Fisher's exact test,
+two-sided. Proportions carry Wilson score intervals; differences carry Wald
+intervals. Only the n = 200 experiment (§6.6) had its endpoint, arm sizes, and
+oracle definition fixed before data collection. The pilot (§6.4) and the scaled
+run (§6.5) were exploratory, and their subgroup analyses are hypothesis-
+generating rather than confirmatory. We report all runs conducted, including
+those that did not support the hypothesis. No correction for multiple
+comparisons is applied, because we do not claim significance for any exploratory
+comparison.
+
+6.1 A Naive Rate Metric Degenerates in Production
+
+The first implementation approximated each agent's pace as a lifetime average:
+operations completed divided by uptime. Across 1,697 legacy messages the metric
+collapsed. Median recorded rates fell to 0.001 to 0.003 operations per second
+for every agent, with idle agents drifting asymptotically toward zero. Apparent
+divergences of five orders of magnitude between agents proved to be artifacts of
+the metric rather than properties of the system.
+
+This is direct empirical support for the definitional separation in §4.3. A
+single number conflating cumulative progress with current rate measures uptime,
+not experience. The finding is worth stating plainly because it is the kind of
+error that is invisible in a specification and obvious in a trace.
+
+6.2 Proper-Time Divergence Is Real and Measurable
+
+With τ and π separated, ordinary production missions exhibited the phenomenon
+directly. Three orchestration missions routing work from a fast coordinator to a
+slow worker:
+
+Mission	Wall time	τ coordinator	τ worker	Ratio
+mis_274e87fe	384.5 s	6.0	1.0	6.0×
+mis_d18a03bc	144.1 s	10.0	3.0	3.3×
+mis_4783a34e	600.0 s	4.0	2.0	2.0×
+	Identical wall-clock windows; up to sixfold divergence in accumulated internal
+progress.
+
+Limitation. τ here counts protocol-level operations (dispatch, handle,
+delegation ticks), not reasoning steps within a model invocation. The
+granularity is coarser than §4.2 envisages, and the ratios should be read as
+lower bounds on the divergence a finer-grained instrument would report. Three
+missions is also a small and non-random sample; we present this as a
+demonstration of measurability, not as an estimate of typical divergence.
+
+6.3 A Negative Result, and What It Measures
+
+All 849 classifiable request/response pairs in the corpus fall into relation 1
+(ORDERED). We observed no CAUSAL_DRIFT and no INCONSISTENT.
+
+This is expected rather than disconfirming: sequential dispatch produces causal
+order by construction. The interesting relations require genuinely parallel
+branches, which the orchestrator only recently gained. The classifier has not
+yet met the traffic it was built for, and we flag this as the primary gap
+between implementation and validation.
+
+Read as a diagnosis rather than a failure, the uniform result is itself a
+measurement of the system's topology. LogpyClaw v3 currently operates as a
+centrally orchestrated hub-and-spoke system: closer to an agent manager with an
+unusually rich protocol than to an emergent multi-agent system. The protocol,
+with per-message clocks, directed trust, and adversarial bridges, is built for
+peer traffic the dispatcher does not yet generate. Closing that gap is the
+roadmap, and this classifier will be its measuring instrument.
+
+6.4 Pilot: Does Temporal Self-Knowledge Change Decisions?
+
+To test whether measured temporal information changes decisions rather than
+only logs, we built a real-time delegation scenario on the live system.
+
+A slow agent (a local model, roughly 6 to 8 s per action) must prevent a
+scripted failure arriving in T real seconds. It chooses between acting itself
+(two of its own actions) or delegating to a fast agent (a remotely served model,
+roughly 0.4 s per action; one action to call, one to execute, sometimes plus an
+announced cooldown that makes delegation the slower option). The chosen option
+is then actually executed against the wall clock. Success means finishing before
+T. In the treatment arm the decision prompt contains measured per-action times
+for both agents; the control arm receives an otherwise identical prompt. The
+cooldown, when present, is stated in both arms, so only the rates are
+exclusive to treatment.
+
+Result (n = 20). Success 5/10 with temporal context against 3/10 without
+(difference +20 points, 95 % CI [−22, +62]; Fisher p = 0.65). Against a post-hoc
+oracle from observed costs, the treatment arm decided 7/7 winnable trials
+correctly, the control arm 3/5. Both trials lost through a wrong choice occurred
+in the control arm.
+
+The pilot is underpowered and we draw no inference from the success rates. One
+methodological by-product is worth recording: the injected time sense was itself
+miscalibrated by roughly ninefold, being a one-shot measurement taken with short
+prompts against real action costs, and it helped anyway, because the decision
+required only the ordinal fact that the fast agent is faster. A static
+self-estimate drifting ninefold is precisely the failure mode §4.3 anticipates,
+and it motivated continuous rate measurement.
+
+6.5 Scaled Run: A Non-Replication, and Why It Is Informative
+
+With rolling per-action medians and deadlines drawn from observed costs, we
+scaled to n = 60. The success effect did not replicate: 18/30 with context
+against 21/30 without (difference −10 points, 95 % CI [−34, +14]; Fisher
+p = 0.59).
+
+The decomposition explains why, and is more instructive than the pilot.
+
+Trials without cooldown, where delegation is unambiguously optimal: both
+  arms delegated in 33/33 trials. The ordinal fact was inferable from the
+  scenario framing alone, so the treatment information was never exclusive and
+  could not produce a difference.
+Trials with cooldown, where the arithmetic reverses: the treatment arm
+  switched correctly to self-action in 12/14 trials, the control arm in 8/13
+  (difference +24 points, 95 % CI [−8, +56]; Fisher p = 0.21). Directionally
+  consistent with the pilot, exactly where the information was exclusive, but
+  not significant at this sample size and exploratory in any case.
+Why success favoured the control arm: 9 deaths in the treatment arm
+  followed an estimate-correct choice, against 5 in the control arm. The slow
+  agent's latency is heavy-tailed, and deadlines drawn near the decision
+  boundary turn a correctly chosen self-action into a coin flip on latency
+  spikes. The arm that more often chose the expensive-but-correct option was
+  punished more often by execution variance.
+
+Three design lessons follow, each feeding back into the framework.
+
+Exclusivity. A measured time sense can only demonstrate value where
+   temporal facts are not inferable from static framing. Which agent is faster
+   must be randomised, so that one memorised bit cannot substitute for
+   measurement.
+Endpoint choice. Decision correctness, not task success, is the endpoint
+   a time sense controls. Outcome metrics are confounded by execution variance.
+Point estimates are not a time sense. A median is not a sense of
+   duration. The variance-driven failures show that useful temporal
+   self-knowledge must carry dispersion, not only central tendency: an agent
+   should know that it usually finishes in 12 seconds, and how wide "usually"
+   is. This extends §4.3: the dilation component of the CDC should eventually
+   carry distributional summaries of pace, not scalars.
+
+6.6 Decisive Replication with Randomised Roles (n = 200)
+
+The three lessons specify an experiment, which we pre-specified and ran.
+
+Design. Agent identities are neutral, "Blue" and "Red". Each trial randomly
+binds one name to a fast backend (roughly 0.5 s per action) and the other to a
+slow one (roughly 3 to 15 s per action). Both actors receive identical action
+prompts, so the latency gap is purely a property of the backend rather than of
+the task. Which actor is faster therefore flips unpredictably between trials and
+cannot be inferred from role priors. A commander must dispatch exactly one actor
+against a deadline T. The treatment prompt states the measured per-action time
+of each actor; the control prompt shows only the neutral names and is otherwise
+identical. The deadline is the geometric mean of the two option costs, placing
+it far from either boundary so that execution variance cannot flip the ground
+truth. The primary endpoint is decision correctness against a per-trial oracle:
+did the commander pick the actor that actually meets the deadline? Task success
+is secondary. 100 trials per arm, strictly alternating; per-action times are
+live rolling medians.
+
+Results.
+
+Arm	Decision correct	95 % CI	Task success	95 % CI
+Measured temporal information	100 / 100 (100 %)	[96.3, 100]	95 / 100 (95 %)	[88.8, 97.8]
+Control (neutral roles)	55 / 100 (55 %)	[45.2, 64.4]	57 / 100 (57 %)	[47.2, 66.3]
+	Decision correctness: risk difference +45.0 points, 95 % CI [35.2, 54.8];
+Fisher exact two-sided p = 8.9 × 10⁻¹⁷.
+Task success: risk difference +38.0 points, 95 % CI [27.4, 48.6];
+Fisher exact two-sided p = 1.3 × 10⁻¹⁰.
+
+The control arm is not distinguishable from a no-information chooser: 55/100
+against a chance baseline of 50 % gives an exact binomial p = 0.37, 95 % CI
+[44.7, 65.0]. This is the intended behaviour of the design, and it confirms that
+role randomisation removed the inferable signal that contaminated §6.5.
+
+Task success followed decisions in this run because the buffered deadlines
+removed the latency lottery that confounded the n = 60 endpoint.
+
+Interpretation, stated narrowly. Where the ordinal fact "which peer is
+faster" cannot be read off the framing, a continuously measured pace estimate is
+the difference between perfect and chance-level delegation. The contrast with
+the non-replicating run in §6.5 is itself the result: the effect appears exactly
+when the temporal information is exclusive, and vanishes when it is not.
+
+We are careful about what this does not show. It does not show that time,
+specifically, is the operative variable. The commander's advantage is that it
+received a measured quantity about its peers that it could not otherwise infer.
+Latency is the quantity we measured, but cost per token, expected error rate, or
+tool availability would plausibly produce the same structure of result. The
+finding is best stated as: *measured, exclusive, peer-relative capability
+information converts chance-level delegation into correct delegation.* Temporal
+information is an instance of that class, and it is the instance a distributed
+system is already positioned to collect.
+
+6.7 Threats to Validity
+
+Internal. Single machine and single operator throughout. Backend latency
+distributions are real but were not held constant across sessions. The oracle in
+§6.6 is computed from the same rolling medians supplied to the treatment arm,
+which risks a shared-error dependency between treatment information and ground
+truth; a fully independent oracle would require an execution-time measurement
+not available at decision time. We regard this as the most serious internal
+threat and note that the near-perfect treatment result would be inflated by it.
+
+Construct. τ is measured at protocol granularity, not at the reasoning-step
+granularity §4.2 defines. The delegation scenario is synthetic, though all
+latencies are real. Task success in §6.4 and §6.5 is a confounded endpoint, as
+§6.5 establishes.
+
+External. The corpus is predominantly development traffic. The topology is
+hub-and-spoke (§6.3), so results may not transfer to genuinely peer-to-peer
+systems, which is precisely the regime the protocol was designed for. Two
+backends and one task family.
+
+Statistical. §6.4 and §6.5 are exploratory and underpowered; their subgroup
+analyses should not be read as evidence. Only §6.6 supports confirmatory
+reading, and only for its pre-specified primary endpoint.
+
+***
+7. The Instrumentation Paradox
+
+The two halves of this paper are in tension, and we have not resolved it.
+
+Section 3 argues that temporal annotations reaching an agent's context degrade
+its reasoning, and that the degradation scales with annotation density. Sections
+4 to 6 propose and validate an instrument that attaches temporal annotations to
+every inter-agent message, and a logging discipline that records a proper-time
+value alongside every event.
+
+These are compatible only if CDC values never reach an agent's context. In
+LogpyClaw v3 that separation is not architecturally guaranteed. Instrumented
+events are written to the same store from which agents retrieve memories (§5.2),
+and consolidation rewrites those entries nightly. Any retrieval path that
+surfaces an instrumented event surfaces its temporal annotation with it.
+
+The tension is not hypothetical, and it is not static. The dual-timestamp
+logging tuple is in production (§5.1), which means every logged event now
+carries two temporal annotations where it previously carried one. On the
+argument of §3, the interpretive load imposed by retrieved memories is a
+function of the density of temporal references they contain, and that density
+has demonstrably increased at a datable point in the system's history.
+
+This yields a natural experiment we have not yet run but whose data already
+exist. The signed mission log spans the transition from single- to
+dual-annotation logging. If §3 is correct, agent behaviour on retrieval-heavy
+tasks should degrade measurably across that boundary: more context consumed
+before first task-relevant output, more generated tokens spent on temporal
+reconciliation, higher variance in recency judgements. If no such degradation
+appears, the structural argument of §3 is weakened, or the effect threshold lies
+above the densities our system produces. Either outcome is informative, and the
+comparison requires no new instrumentation.
+
+Stated at its sharpest: **the instrument built in response to the second finding
+is, on the argument of the first, a mechanism for amplifying the problem that
+motivated the paper.**
+
+Three positions are available, and they are empirically distinguishable.
+
+Strict out-of-band. CDC fields are protocol-layer only, stripped at
+   context assembly by construction rather than by convention. This preserves
+   both results but forecloses giving agents the temporal self-knowledge that
+   §6.6 shows to be valuable, which appears to give up the paper's strongest
+   finding.
+Structured differs from scattered. A single, well-formed, positionally
+   fixed temporal statement ("your peer averages 0.5 s per action; you average
+   6 s") may impose a bounded interpretive cost, unlike n scattered absolute
+   timestamps whose cost grows with n. Note that the §6.6 treatment prompt is
+   exactly this: one structured, relativised, aggregated temporal fact. If this
+   position is correct, the n = 200 result is not merely compatible with §3, it
+   is weak evidence for the mitigations of §3.3.
+Budgeted temporal content. Temporal information reaching context is
+   explicitly budgeted and prioritised, as a scarce resource, rather than
+   emitted wherever a timestamp happens to exist.
+
+Position 2 is our working hypothesis, and the reader should note that we arrived
+at it after the fact, having designed the §6.6 prompt for clarity rather than
+for this argument. It is a post-hoc reading of a favourable coincidence and must
+be tested directly: the same delegation experiment, with temporal information
+delivered in structured form against scattered raw timestamps of equivalent
+content, would discriminate between positions 1 and 2 in a single run. We regard
+this as the most important experiment this paper does not contain.
+
+***
+8. Implications
+
+Orchestration. Routing decisions currently made on static model profiles
+should be made on measured, continuously updated pace estimates. Section 6.6
+quantifies the gap between the two regimes for one decision class, and the gap
+is the whole distance between chance and correctness.
+
+Logging and forensics. Dual annotation, wall clock and proper time, makes
+drift a first-class signal and permits per-agent timeline reconstruction after
+the fact. Section 7 constrains where those annotations may subsequently travel.
+
+Reproducibility. A plan step carrying the temporal context in which it was
+planned can be replayed against historical state. Without it, replays execute
+against present-frame clock reads and are subtly wrong.
+
+Trust calibration. For a user consuming an agent's recommendation, temporal
+context is part of provenance. A recommendation issued from a frame that has
+drifted substantially from the user's present deserves more scrutiny than one
+issued from a freshly synchronised frame. The CDC makes that distinction
+available to the interface layer, which is where it needs to be.
+
+Action gating. For actions with irreversible external effects, drift above a
+threshold should trigger re-execution with refreshed context rather than
+log-only acceptance. This is a policy choice per action type, and it should be
+explicit in the action's metadata rather than implicit in the orchestrator.
+
+***
+9. Conclusion
+
+We have argued that time in LLM agent systems fails classical treatment in two
+independent ways. It is interpreted where classical systems leave it inert,
+which degrades reasoning in proportion to how much of it reaches the context.
+And it is unmeasured where it would be decision-relevant, which degrades
+delegation to chance when the relevant facts are not otherwise inferable.
+
+The second claim is the one we can currently support with strong evidence: under
+randomised roles at n = 200, measured peer latency converted 55 % delegation
+accuracy into 100 %. We have been careful to state that result narrowly, since
+the operative property is measured exclusive peer information, of which latency
+is one instance.
+
+The first claim is, we believe, the more consequential, and it currently rests
+on a field observation and a structural argument rather than on a controlled
+experiment. That asymmetry is the honest summary of this paper's state. Two
+routes out of it are available, and neither requires new instrumentation. One is
+retrospective: the signed mission log spans a change in temporal annotation
+density, and §7 specifies what should be visible across that boundary if the
+argument holds. The other is prospective and would simultaneously resolve the
+tension in §7: repeat the delegation experiment holding temporal content
+constant and varying only its form in context, structured against scattered.
+
+A final note on scope. The system studied here is hub-and-spoke, and its
+protocol was designed for peer traffic it does not yet produce (§6.3). The
+instrument therefore currently exceeds the system it measures. We consider that
+the correct order in which to build the two, but it does mean the framework's
+more interesting predictions remain untested.
+
+***
+Data and Code Availability
+
+Implementation, experiment scripts, and raw results:
+<https://github.com/Jeuners/logpyclaw> (experiments/). Mission-log records are
+signed with an ML-DSA-65 hash chain; verification tooling is included in the
+repository.
+
+Competing Interests
+
+The author is the developer of the system under evaluation. All experiments were
+designed, executed, and analysed by the author. No independent replication has
+been performed. Readers should weight the results accordingly.
+
+***
+References
+
+Lamport, L. (1978). Time, clocks, and the ordering of events in a distributed
+   system. Communications of the ACM, 21(7), 558-565.
+Fidge, C. J. (1988). Timestamps in message-passing systems that preserve the
+   partial ordering. *Proceedings of the 11th Australian Computer Science
+   Conference*, 56-66.
+Mattern, F. (1989). Virtual time and global states of distributed systems.
+   Parallel and Distributed Algorithms, 215-226.
+Kulkarni, S. S., Demirbas, M., Madappa, D., Avva, B., & Leone, M. (2014).
+   Logical physical clocks. Principles of Distributed Systems (OPODIS 2014),
+   17-32.
+Corbett, J. C., et al. (2013). Spanner: Google's globally distributed
+   database. ACM Transactions on Computer Systems, 31(3), 1-22.
+Lamport, L. (1998). The part-time parliament. *ACM Transactions on Computer
+   Systems*, 16(2), 133-169.
+Ongaro, D., & Ousterhout, J. (2014). In search of an understandable consensus
+   algorithm. USENIX Annual Technical Conference, 305-319.
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y.
+   (2023). ReAct: Synergizing reasoning and acting in language models.
+   International Conference on Learning Representations (ICLR 2023).
+Wu, Q., Bansal, G., Zhang, J., Wu, Y., Zhang, S., Zhu, E., Li, B., Jiang, L.,
+   Zhang, X., & Wang, C. (2023). AutoGen: Enabling next-gen LLM applications via
+   multi-agent conversation. arXiv:2308.08155.
+Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F.,
+    & Liang, P. (2024). Lost in the middle: How language models use long
+    contexts. Transactions of the Association for Computational Linguistics,
+    12, 157-173.
+Park, J. S., O'Brien, J. C., Cai, C. J., Morris, M. R., Liang, P., &
+    Bernstein, M. S. (2023). Generative agents: Interactive simulacra of human
+    behavior. UIST 2023.
+Husserl, E. (1928). Zur Phänomenologie des inneren Zeitbewusstseins.
+    Niemeyer, Halle.
