@@ -6,6 +6,15 @@ H.G.O. Dillenberg
 Hilden, Germany
 Working draft, revision 2 -- August 2026
 
+Implementation and reproducibility corrections -- 6 September 2026.
+This update checks the implementation against LogpyClaw commit
+`da935366521a00c25ae940ea0581ac9800064782`; it reports no new LLM trials.
+See [implementation evidence and correction record](IMPLEMENTATION.md).
+A separate [follow-up implementation](IMPLEMENTATION.md#follow-up-implementation-steps-13)
+adds measured action latencies and optional planner context, with software and
+local functional checks. It reports no new controlled LLM experiment and does
+not alter the historical study endpoints.
+
 Contact: dillenberg.net · LinkedIn · X
 
 ***
@@ -31,7 +40,8 @@ which growing memory caused agents to spend context budget reconstructing
 timelines rather than executing tasks, and we argue this failure mode is
 structurally unavailable to classical distributed systems, where timestamped
 processes do not read their own timestamps. Second, **the absence of measured
-temporal information degrades agent decisions to chance**. We define agent
+temporal information leaves delegation near chance in the randomised-role
+experiment reported here**. We define agent
 proper time as a monotonic count of weighted internal operations, separate it
 from an instantaneous pace estimate, and extend vector clocks with a parallel
 dilation vector (the Causal-Dilation Clock).
@@ -42,8 +52,8 @@ in production, empirically motivating the proper-time/pace separation. Proper
 times of coordinator and worker agents diverge by factors up to 6 within
 identical wall-clock windows. In a pre-specified delegation experiment with
 randomised role-to-backend binding (n = 200), agents given measured per-action
-latencies of their peers chose the deadline-meeting delegate in 100 of 100
-trials, against 55 of 100 without (risk difference 45 percentage points, 95 %
+latencies of their peers chose the delegate favoured by the estimated-cost
+oracle in 100 of 100 trials, against 55 of 100 without (risk difference 45 percentage points, 95 %
 CI [35, 55]; Fisher exact two-sided p = 8.9 × 10⁻¹⁷). The control arm is
 statistically indistinguishable from chance (p = 0.37 against 50 %). A prior
 run without randomised roles failed to replicate; we report it in full, because
@@ -52,9 +62,11 @@ temporal information changes decisions precisely when it is not inferable from
 static framing.
 
 Finally, we identify an unresolved tension between the two halves of the paper.
-The instrumentation built in response to the second finding produces exactly the
-kind of interpretable temporal content implicated in the first, and it is in
-production. We state the problem, propose mitigations, specify two experiments
+The instrumentation built in response to the second finding can produce the
+kind of interpretable temporal content implicated in the first if it reaches
+model context. This update does not establish an automatic production path from
+CDC logs into retrieved memories. We state the problem, propose mitigations,
+specify two experiments
 that would discriminate between the available positions, and do not claim to
 have solved it.
 
@@ -309,8 +321,9 @@ lookups, and reasoning-step transitions. Weights may be uniform (w<sub>k</sub>
 
 Three properties hold by construction:
 
-Monotonicity. τᵢ never decreases, and advances even when wall-clock
-   progress stalls, as during a suspended tool call.
+Monotonicity. For non-negative weights, τᵢ never decreases within an
+   agent's accounting lifetime. It advances only when a counted operation
+   occurs; a suspended tool call without further operations does not advance τᵢ.
 Locality. τᵢ is meaningful within aᵢ's own accounting. Direct
    comparison of τᵢ against τⱼ requires a transformation (§4.3).
 Wall-clock independence. Two agents may share an interval [t₀, t₁]
@@ -319,6 +332,10 @@ Wall-clock independence. Two agents may share an interval [t₀, t₁]
 The definition deliberately leaves the operation set and the weighting to
 implementation. In LogpyClaw v3, τ counts protocol-level operations (dispatch,
 handle, delegation ticks); §6.2 discusses the granularity cost of this choice.
+Some ticks occur on entry to an invocation rather than on completion. Thus the
+implementation measures counted protocol events, not completed hidden reasoning
+steps. Agent clock state starts afresh when its process is reconstructed; this
+is not a claim of persistent monotonicity across restarts.
 
 4.3 Separating Cumulative Progress from Instantaneous Pace
 
@@ -349,63 +366,72 @@ per-operation costs. If aᵢ averages 50 ms per step and aⱼ averages 2000 ms,
 then γᵢⱼ ≈ 0.025. The transformation is asymmetric in general
 (γᵢⱼ ≠ 1/γⱼᵢ under non-uniform weights).
 
+This proposed cost conversion must not be confused with the implementation's
+faction `gamma`, which estimates the inverse kind of ratio: source pace divided
+by target pace. The base CDC classifier compares each agent's own τ across
+events and does not apply a cross-agent transformation. The implemented pace
+uses intervals between protocol ticks, including idle gaps, rather than isolated
+model execution time. It is consequently not interchangeable with the measured
+per-action latency supplied in §6.6.
+
 Section 6.5 shows that scalar γ is insufficient in one specific and practically
 important respect: it discards dispersion, and dispersion is what determines
 whether a decision near a deadline boundary survives execution.
 
 4.4 The Causal-Dilation Clock
 
-Standard vector clocks capture order but not experience. We extend the clock
-with a parallel dilation vector D = (τ₁, ..., τ<sub>n</sub>) alongside the
-standard vector V. The pair (V, D) we call a Causal-Dilation Clock
-(CDC).
+The implemented CDC is a triple (V, τ, π). Its wire fields are `vector`,
+`tau`, and `dilation`, respectively. The legacy name `dilation` denotes pace,
+not cumulative proper time. There is no separate `pace` field in the current
+wire format. `wall_ts` is added at serialisation time and is not a stable
+observation timestamp.
 
-Two events eᵢ, eⱼ with clocks (Vᵢ, Dᵢ), (Vⱼ, Dⱼ) stand in one of
-four relations:
+The implementation compares each agent's τ component across two events without
+applying Φ. Its relation labels have the following exact behaviour, with τ
+comparisons evaluated within the supplied tolerance:
 
-#	Relation	Condition	Interpretation
-1	ORDERED	Vᵢ ≤ Vⱼ and Φ(Dᵢ) ≤ Dⱼ	Classical happened-before, temporally consistent
-2	CAUSAL_DRIFT	Vᵢ ≤ Vⱼ but Φ(Dᵢ) ≰ Dⱼ	Causally ordered, but the successor frame accumulated less progress than expected
-3	CONCURRENT_DRIFT	Vᵢ ∥ Vⱼ, D values diverge substantially	No causal dependency, materially different work performed
-4	INCONSISTENT	V and D disagree on order	Suggests clock corruption or a dropped update
-	Relation 4 is the practically valuable one: with both V and D instrumented,
-temporally implausible reports become detectable, for example an agent claiming
-three reasoning steps in an interval during which a comparable peer completed
-thirty. Section 6.3 reports that we have not yet observed relations 2 to 4 in
-production traffic, and why that null result is a measurement of our own
-topology rather than a disconfirmation.
+| Vector relation | Proper-time relation | Result |
+| --- | --- | --- |
+| Strictly ordered in either direction | Consistent in that direction | ORDERED |
+| Strictly ordered | Inconsistent in that direction | CAUSAL_DRIFT |
+| Equal | Equal | ORDERED |
+| Equal | Different | INCONSISTENT |
+| Concurrent | Equal | ORDERED |
+| Concurrent | Different | CONCURRENT_DRIFT |
 
-4.5 Reference Implementation Sketch
+In particular, ORDERED is a legacy classifier label and does not always assert
+happened-before: concurrent vectors with equal τ receive that label too.
+Different agent rates alone do not establish corruption, and these relations do
+not validate how many hidden reasoning steps a model performed. Faction-level
+reclassification uses a separate learned pace ratio (§4.3).
 
-@dataclass
-class CausalDilationClock:
-    vector: dict[AgentId, int]        # standard vector clock
-    dilation: dict[AgentId, float]    # cumulative proper time tau
-    pace: dict[AgentId, PaceEstimate] # EWMA rate, merged by recency
+Section 6.3 reports the historical null result for drift in request/response
+traffic. That result is an observation about the sampled topology and does not
+validate the classifier under every concurrent workload.
 
-    def tick(self, agent_id: AgentId, op_weight: float = 1.0,
-             wall_delta: float | None = None) -> None:
-        """Called by an agent on every internal reasoning operation."""
-        self.vector[agent_id] = self.vector.get(agent_id, 0) + 1
-        self.dilation[agent_id] = self.dilation.get(agent_id, 0.0) + op_weight
-        if wall_delta is not None:
-            self.pace[agent_id] = self.pace[agent_id].update(op_weight, wall_delta)
+4.5 Reference Implementation Contract
 
-    def merge(self, other: "CausalDilationClock") -> None:
-        """Called on receipt of a message from another agent."""
-        for a, v in other.vector.items():
-            self.vector[a] = max(self.vector.get(a, 0), v)
-        for a, d in other.dilation.items():
-            # tau is monotone and non-revisable: max-merge is sound
-            self.dilation[a] = max(self.dilation.get(a, 0.0), d)
-        for a, p in other.pace.items():
-            # a rate is only as good as its recency: prefer the newer observation
-            if p.observed_at > self.pace.get(a, PaceEstimate.EMPTY).observed_at:
-                self.pace[a] = p
+The source of truth is `backend/core/cdc.py` at the revision identified above:
 
-The per-message cost is a small fixed number of fields. The benefit, developed
-in §6, is a system that can detect and act on divergences that are otherwise
-invisible.
+- `tick(agent_id, op_weight)` advances V and τ. The agent wrapper normally
+  uses a uniform weight of one.
+- `tick_with_rate(agent_id, rate)` adds a unit tick and records a positive
+  rate in `dilation`; the wrapper computes its EWMA outside the clock.
+- `merge()` takes component-wise maxima of V and τ. For rates, the greater
+  per-agent V determines recency, with maximum rate as the tie-breaker.
+- `relate()` compares τ for the same agent keys. Its `gamma` argument is
+  retained for compatibility and is not used.
+- `rate_stats` and `time_sense()` live on the agent, outside the wire clock.
+
+This contract replaces an earlier illustrative sketch whose `dilation` and
+`pace` names did not match the implementation. Payload size grows with the
+number of represented agents; three maps are not constant-size storage.
+
+ML-DSA-65 signatures cover the message's stable `timestamp` and, within its
+clock, `vector` and `dilation`. They deliberately exclude `tau` and the generated
+`wall_ts` for legacy compatibility. A valid chain therefore does not directly
+authenticate stored τ values. Extending that guarantee requires a versioned
+signing format and explicit legacy verification.
 
 ***
 5. Implementation
@@ -415,51 +441,48 @@ system by the same author, successor to the AgentClaw codebase in which the
 original field observation was made. The CDC ships as a mandatory field on every
 inter-agent message (backend/core/cdc.py); τ is tracked per agent alongside an
 EWMA pace estimate; cross-faction drift is classified before logging. The
-system runs on Python 3.14, FastAPI, SQLModel, and Qdrant for vector memory,
-serving locally hosted and remotely served models through a unified dispatch
-layer.
+project declares Python 3.12 or newer and uses FastAPI, SQLModel, and SQLite
+with sqlite-vec for semantic memory, serving locally hosted and remotely served
+models through a unified dispatch layer.
 
 Source: <https://github.com/Jeuners/logpyclaw>
 Background: <https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/>
 
 5.1 Implementation Status
 
-We distinguish three states, and we treat this table as a claim subject to the
-same scrutiny as the empirical results.
+The following status describes the checked source revision, not every earlier
+AgentClaw deployment. Source paths and focused tests are listed in
+[IMPLEMENTATION.md](IMPLEMENTATION.md).
 
-Component	Status
-A2A delegation protocol (XML tasklists)	Implemented
-Heartbeat service (minutes to days)	Implemented
-Nightly memory consolidation	Implemented
-Peer-to-peer node dispatch	Implemented
-Per-agent history with wall-clock timestamps	Implemented
-Causal-Dilation Clock on every dispatch	Implemented
-Proper time τ per agent	Implemented
-EWMA pace estimate per agent	Implemented
-Drift classification (relations 1 to 4)	Implemented
-Signed mission log (ML-DSA-65 hash chain)	Implemented
-reference_now / parent_reference_now on plan steps	Implemented, tested
-TimeProvider injection replacing direct clock access	Implemented, tested
-Dual-timestamp logging tuple	Implemented, tested
-Re-synchronisation policy per action type	Implemented
-Distributional pace summaries (§6.5)	Planned
-Context-assembly mitigations (§3.3)	Planned
-	The frame-inheritance mechanism deserves a note, because it is the component
-that most directly encodes the framework's central commitment. When a sub-agent
-is spawned it does not begin with a fresh clock read. It inherits
-parent_reference_now from the dispatching agent and advances its own proper
-time from there, so that the temporal context in which a plan was formed travels
-with the plan rather than being reconstructed at execution time. The
-accompanying discipline is that agent code does not call the system clock
-directly; all temporal access is routed through an injected TimeProvider
-exposing now(), wall_now(), pace(), and fork(). This makes frame-aware
-behaviour the default and frame-blind behaviour an explicit, reviewable
-deviation.
+| Component | Verified status |
+| --- | --- |
+| External A2A delegation | JSON gateway implemented; not XML tasklists. |
+| Periodic work | Configured initiative loops, RSS jobs and daily dream-image generation implemented. |
+| Nightly semantic-memory consolidation | Not found; the dream service generates images rather than rewriting recalled memories. |
+| Agent-initiated dispatch | Implemented through the central Conductor; does not establish a decentralised multi-node mesh. |
+| Per-message wall timestamp and CDC | Implemented in structured message records. |
+| Proper time τ and EWMA pace | Implemented at protocol-tick granularity. |
+| Drift classification | Implemented with the exact cases in §4.4. |
+| Signed mission log | ML-DSA-65 hash chain implemented; τ is outside the signed clock fields. |
+| `reference_now` / `parent_reference_now` on plan steps | Not found in the checked backend or tests. |
+| Injected `TimeProvider` replacing direct clock access | Not found; direct `time.time()` calls remain. |
+| Uniform dual-timestamp logging tuple | Not found in the text logger; structured message clocks are a different mechanism. |
+| Re-synchronisation policy per action type | Not found as a general policy; faction bridges do not establish it. |
+| Distributional pace summaries | Agent-local EWMA absolute deviation and dev/rate ratio implemented and tested. |
+| General measured-latency input to the production planner | Not implemented; the experiment injects its own action-latency estimates. |
+| Context-assembly mitigations (§3.3) | Explicit global temporal budgeting or filtering remains proposed. |
 
-Two components remain unbuilt, and both are consequences of findings reported
-below rather than of the original design: distributional rather than scalar pace
-summaries, which §6.5 shows to be necessary, and the context-assembly
-mitigations of §3.3, whose absence is the subject of §7.
+Frame inheritance via an injected TimeProvider is a design proposal, not a
+verified property of this version. What does exist is causal-history propagation:
+agent-initiated messages inherit a snapshot of the sender's CDC, which the
+recipient merges. This is distinct from inheriting an absolute `reference_now`
+for reproducible historical reads.
+
+Distributional summaries also need a precise limit: the implemented `dev` is an
+EWMA absolute deviation from the updated rate, not a standard deviation or a
+latency quantile. It does not by itself deliver calibrated deadline probabilities.
+The context-form comparison of §7 and a production routing connection remain
+follow-up work.
 
 5.2 Four Sources of Divergence
 
@@ -473,20 +496,20 @@ progress. This is the prototypical case.
 Asynchronous heartbeats decoupled from interactive time. Scheduled tasks
 run at intervals from minutes to days. Four heartbeat cycles may elapse during
 a single conversation; hundreds of conversational turns may elapse between two
-firings. Both write to shared memory, and an agent recalling an entry cannot,
-without frame annotation, determine which regime authored it.
+firings. If results from both regimes are ingested into shared semantic memory, a
+recalling agent needs provenance to distinguish them. That ingestion is not
+established merely by the presence of scheduled jobs.
 
-Nightly consolidation operating on past memory. The consolidation service
-re-reads, summarises, and re-embeds entries accumulated during the day. It
-modifies, in the system's present, the records of the system's past. An agent
-recalling a consolidated memory the following day encounters a record that has
-changed although the underlying event has not. Versioning alone does not model
-this, because the question is not which version is current but which frame
-authored the modification.
+Consolidation operating on past memory (proposed scenario). A service that
+re-reads, summarises and re-embeds old entries would modify records of the past
+in the system's present. The recalling agent would need provenance of that
+transformation. The checked version does not implement this nightly
+consolidation path; it is a design case rather than observed current behaviour.
 
-Peer dispatch across nodes. Each node has its own clock, load, and cost
-profile. Network-level ordering is handled by classical primitives; the
-progress divergence between heterogeneous nodes is not.
+Peer dispatch across nodes (proposed extension). Nodes can differ in load and
+operation cost even with network ordering in place. The current agent-initiated
+primitive still passes through one Conductor and does not validate this
+multi-node case.
 
 ***
 6. Evaluation
@@ -536,8 +559,9 @@ progress.
 
 Limitation. τ here counts protocol-level operations (dispatch, handle,
 delegation ticks), not reasoning steps within a model invocation. The
-granularity is coarser than §4.2 envisages, and the ratios should be read as
-lower bounds on the divergence a finer-grained instrument would report. Three
+granularity is coarser than §4.2 envisages. Without a calibrated mapping between
+protocol events and internal work, these ratios are not proven lower bounds on
+what a finer-grained instrument would report. Three
 missions is also a small and non-random sample; we present this as a
 demonstration of measurability, not as an estimate of typical divergence.
 
@@ -555,10 +579,11 @@ between implementation and validation.
 Read as a diagnosis rather than a failure, the uniform result is itself a
 measurement of the system's topology. LogpyClaw v3 currently operates as a
 centrally orchestrated hub-and-spoke system: closer to an agent manager with an
-unusually rich protocol than to an emergent multi-agent system. The protocol,
-with per-message clocks, directed trust, and adversarial bridges, is built for
-peer traffic the dispatcher does not yet generate. Closing that gap is the
-roadmap, and this classifier will be its measuring instrument.
+unusually rich protocol than to an emergent multi-agent system. The sampled corpus does not demonstrate peer drift. The checked source now
+includes `Conductor.initiate()` and configured initiative loops, so absence of
+peer traffic in that historical corpus must not be read as absence of the
+primitive in current code. Decentralised peer operation and a new concurrent
+traffic evaluation remain open.
 
 6.4 Pilot: Does Temporal Self-Knowledge Change Decisions?
 
@@ -577,10 +602,11 @@ cooldown, when present, is stated in both arms, so only the rates are
 exclusive to treatment.
 
 Result (n = 20). Success 5/10 with temporal context against 3/10 without
-(difference +20 points, 95 % CI [−22, +62]; Fisher p = 0.65). Against a post-hoc
-oracle from observed costs, the treatment arm decided 7/7 winnable trials
-correctly, the control arm 3/5. Both trials lost through a wrong choice occurred
-in the control arm.
+(difference +20 points, 95 % CI [−22, +62]; Fisher p = 0.65). The committed `dragon3-results.json` summary reports oracle agreement on
+winnable trials of 9/10 with information and 7/8 without. The earlier 7/7 versus
+3/5 subgroup statement cannot be reproduced from that file and is withdrawn
+pending a separately identified source. These oracle subgroups remain
+exploratory.
 
 The pilot is underpowered and we draw no inference from the success rates. One
 methodological by-product is worth recording: the injected time sense was itself
@@ -643,9 +669,10 @@ cannot be inferred from role priors. A commander must dispatch exactly one actor
 against a deadline T. The treatment prompt states the measured per-action time
 of each actor; the control prompt shows only the neutral names and is otherwise
 identical. The deadline is the geometric mean of the two option costs, placing
-it far from either boundary so that execution variance cannot flip the ground
-truth. The primary endpoint is decision correctness against a per-trial oracle:
-did the commander pick the actor that actually meets the deadline? Task success
+it between estimated costs. This reduces proximity to the estimated boundaries
+but does not guarantee immunity to execution variance. The primary endpoint is
+agreement with a per-trial oracle: did the commander pick the actor with the
+lower rolling-median estimated cost? Task success
 is secondary. 100 trials per arm, strictly alternating; per-action times are
 live rolling medians.
 
@@ -664,8 +691,23 @@ against a chance baseline of 50 % gives an exact binomial p = 0.37, 95 % CI
 [44.7, 65.0]. This is the intended behaviour of the design, and it confirms that
 role randomisation removed the inferable signal that contaminated §6.5.
 
-Task success followed decisions in this run because the buffered deadlines
-removed the latency lottery that confounded the n = 60 endpoint.
+Task success was associated with oracle agreement but was not identical to it:
+five treatment trials missed the execution deadline despite oracle-correct
+choices. The buffered design did not eliminate latency variance.
+
+Endpoint boundary. `survived` is defined by execution duration alone
+(`exec_s <= deadline_s`); decision time and calibration are excluded. Recounting
+rounded committed values using `decision_s + exec_s <= deadline_s` gives
+93/100 versus 54/100. This is a descriptive post-hoc check, not a pre-specified
+result or a new trial series; it still excludes calibration and preceding work.
+The stored Fisher p-values are rounded to `0.0` in the JSON. The nonzero values
+above are recoverable from the count tables and must not be interpreted as
+mathematical zero.
+
+The treatment's rolling medians are measured separately from CDC `dilation`.
+The recorded `live_rates` snapshots are not used to construct those medians.
+This experiment is not an ablation establishing that the CDC wire format or τ
+caused the observed advantage.
 
 Interpretation, stated narrowly. Where the ordinal fact "which peer is
 faster" cannot be read off the framing, a continuously measured pace estimate is
@@ -718,32 +760,31 @@ its reasoning, and that the degradation scales with annotation density. Sections
 every inter-agent message, and a logging discipline that records a proper-time
 value alongside every event.
 
-These are compatible only if CDC values never reach an agent's context. In
-LogpyClaw v3 that separation is not architecturally guaranteed. Instrumented
-events are written to the same store from which agents retrieve memories (§5.2),
-and consolidation rewrites those entries nightly. Any retrieval path that
-surfaces an instrumented event surfaces its temporal annotation with it.
+Whether richer instrumentation increases interpretive load depends on which
+fields actually reach the model. The current code does not establish the earlier
+claim that instrumented mission events are automatically recalled from the same
+store and rewritten nightly. Mission storage and SQLite semantic memory are
+separate components. The normal LLM path receives message content and persona;
+Martin's planner inserts recalled text, without automatically appending each
+record's time fields. Temporal references already embedded in text may still
+reach context, and an A2A response can expose a CDC summary.
 
-The tension is not hypothetical, and it is not static. The dual-timestamp
-logging tuple is in production (§5.1), which means every logged event now
-carries two temporal annotations where it previously carried one. On the
-argument of §3, the interpretive load imposed by retrieved memories is a
-function of the density of temporal references they contain, and that density
-has demonstrably increased at a datable point in the system's history.
+The paradox is therefore a testable design risk, not a demonstrated production
+regression in this revision. The text logger does not implement the claimed
+uniform dual-timestamp tuple (§5.1), and this review has not established a dated
+transition in prompt annotation density. A retrospective study would first need
+versioned deployments and captured prompts showing the proposed exposure
+change. The existence of CDC fields in a signed mission log is insufficient.
 
-This yields a natural experiment we have not yet run but whose data already
-exist. The signed mission log spans the transition from single- to
-dual-annotation logging. If §3 is correct, agent behaviour on retrieval-heavy
-tasks should degrade measurably across that boundary: more context consumed
-before first task-relevant output, more generated tokens spent on temporal
-reconciliation, higher variance in recency judgements. If no such degradation
-appears, the structural argument of §3 is weakened, or the effect threshold lies
-above the densities our system produces. Either outcome is informative, and the
-comparison requires no new instrumentation.
+If that exposure history becomes available, compare retrieval-heavy tasks for
+context use, time to first task-relevant output and recency-judgement variance,
+while accounting for simultaneous model, retrieval and prompt changes. Such a
+comparison would remain observational. Without it, the prospective controlled
+context-form experiment below is the clearer next step.
 
-Stated at its sharpest: **the instrument built in response to the second finding
-is, on the argument of the first, a mechanism for amplifying the problem that
-motivated the paper.**
+The open question is precise: can measured temporal information improve
+coordination while its form and amount in context keep interpretive costs
+bounded?
 
 Three positions are available, and they are empirically distinguishable.
 
@@ -816,15 +857,15 @@ is one instance.
 The first claim is, we believe, the more consequential, and it currently rests
 on a field observation and a structural argument rather than on a controlled
 experiment. That asymmetry is the honest summary of this paper's state. Two
-routes out of it are available, and neither requires new instrumentation. One is
-retrospective: the signed mission log spans a change in temporal annotation
-density, and §7 specifies what should be visible across that boundary if the
-argument holds. The other is prospective and would simultaneously resolve the
-tension in §7: repeat the delegation experiment holding temporal content
-constant and varying only its form in context, structured against scattered.
+routes could test it. A retrospective study first requires verified prompt
+exposure history; the current signed log alone does not establish that history.
+A prospective study would repeat the delegation experiment while holding
+informational content constant and varying its form in context, structured
+against scattered, with explicit prompt and timing measurements.
 
 A final note on scope. The system studied here is hub-and-spoke, and its
-protocol was designed for peer traffic it does not yet produce (§6.3). The
+historical corpus does not validate peer traffic, although the checked code now
+contains centrally dispatched agent-initiated missions (§6.3). The
 instrument therefore currently exceeds the system it measures. We consider that
 the correct order in which to build the two, but it does mean the framework's
 more interesting predictions remain untested.
@@ -835,7 +876,10 @@ Data and Code Availability
 Implementation, experiment scripts, and raw results:
 <https://github.com/Jeuners/logpyclaw> (experiments/). Mission-log records are
 signed with an ML-DSA-65 hash chain; verification tooling is included in the
-repository.
+repository. The [implementation evidence](IMPLEMENTATION.md) pins source and
+raw-data paths. Local databases, deployment histories and prompt captures used
+for the historical observational corpus are not included in this paper
+repository; their contents were not independently reconstructed in this update.
 
 Competing Interests
 
