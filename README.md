@@ -1,6 +1,6 @@
 Time Is Not Metadata
 
-Interpretable Timestamps and Measured Proper Time in LLM Agent Systems
+Interpretable Timestamps and Measured Action Latency in LLM Agent Systems
 
 H.G.O. Dillenberg
 Hilden, Germany
@@ -304,6 +304,11 @@ below and because no compact English equivalent exists. Readers should
 understand it as a label, not as a claim of structural correspondence. Nothing
 in §§4 to 7 depends on relativity, and the empirical results of §6 are
 independent of it.
+
+The repository URL retains the historical name `Time_Dilation_in_LLM_Agent_Systems`
+to preserve existing links. It is not the title or theoretical framing of the
+current paper. The title and subtitle instead identify interpretable timestamps
+and measured action latency as the subjects of this work.
 
 4.2 Defining Proper Time
 
