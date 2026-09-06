@@ -15,7 +15,7 @@ adds measured action latencies and optional planner context, with software and
 local functional checks. It reports no new controlled LLM experiment and does
 not alter the historical study endpoints.
 
-Contact: dillenberg.net · LinkedIn · X
+Contact: dillenberg.net · X
 
 ***
 > Scope note. This paper assumes working knowledge of distributed systems
