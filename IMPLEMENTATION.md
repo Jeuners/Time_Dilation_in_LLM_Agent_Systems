@@ -3,15 +3,19 @@
 Audit date: 6 September 2026. This is a source and saved-data review, not an
 independent replication or a new empirical study.
 
+> Note (11 November 2026): LogpyClaw was published with its development history
+> squashed into a single commit. The revisions `da93536` and `3b4ce2b` named below are
+> internal; links now point to the public `main` branch, which contains all referenced files.
+
 - Paper baseline: [`ca45b8946ff0d6933afba8bb34c0b49610c333ed`](https://github.com/Jeuners/Time_Dilation_in_LLM_Agent_Systems/tree/ca45b8946ff0d6933afba8bb34c0b49610c333ed).
-- Implementation baseline: [`da935366521a00c25ae940ea0581ac9800064782`](https://github.com/Jeuners/logpyclaw/tree/da935366521a00c25ae940ea0581ac9800064782).
+- Implementation baseline: [`da935366521a00c25ae940ea0581ac9800064782`](https://github.com/Jeuners/logpyclaw/tree/main).
 - Companion additions prepared for LogpyClaw: `docs/TIME-DILATION.md` and
   `experiments/README.md`. These paths are new documentation and are not
   claimed to exist at the pinned implementation baseline.
 
 ## Follow-up implementation: steps 1–3
 
-A subsequent implementation is pinned at [LogpyClaw `3b4ce2b`](https://github.com/Jeuners/logpyclaw/tree/3b4ce2b).
+A subsequent implementation is pinned at [LogpyClaw `3b4ce2b`](https://github.com/Jeuners/logpyclaw/tree/main).
 It adds monotonic dispatch durations, separate model/tool/delegation spans,
 bounded model/backend/configuration-specific samples, and an optional measured
 latency block in Martin's planner. Unknown or stale estimates are explicit;
@@ -23,8 +27,8 @@ Martin and Alice use local Ollama `qwen3.5:latest` for these functional checks.
 The planner requests structured JSON; invalid plans and browser-stream failures
 are recorded as failures. The historical CDC signature scope is unchanged.
 
-See the [operational contract](https://github.com/Jeuners/logpyclaw/blob/3b4ce2b/docs/MEASURED-LATENCY.md)
-and [verification record](https://github.com/Jeuners/logpyclaw/blob/3b4ce2b/docs/testing/measured-latency.tdd.md):
+See the [operational contract](https://github.com/Jeuners/logpyclaw/blob/main/docs/MEASURED-LATENCY.md)
+and [verification record](https://github.com/Jeuners/logpyclaw/blob/main/docs/testing/measured-latency.tdd.md):
 280 software tests passed, with 98% coverage of the new timing core. Local live
 checks exercised direct replies and delegation. These are functional checks,
 not a controlled replication or evidence of improved routing performance.
@@ -43,16 +47,16 @@ does not silently change the implementation being described.
 
 | Paper topic | Source evidence | Consequence |
 | --- | --- | --- |
-| §4.2 operations and pace | [Agent base](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/agents/base.py), [LLM handle](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/agents/llm_agent.py) | Unit protocol ticks; LLM entry is ticked before inference; rate uses time between ticks, including idle time. |
-| §§4.4–4.5 clock fields and comparisons | [CDC](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/core/cdc.py) | `vector` = V, `tau` = cumulative progress, `dilation` = rate; generated `wall_ts`; no separate `pace` field. |
-| §4.3 faction γ | [Faction protocol](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/core/faction_protocol.py) | Learned source/target pace ratio; different convention from the paper's proposed cost conversion. |
-| §5 signature guarantee | [Message signing payload](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/core/protocol.py) | Clock V and rate are signed; τ and generated `wall_ts` are excluded. |
-| §5 periodic peer initiative | [Conductor](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/agents/conductor.py), [initiative loop](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/services/initiative.py) | Agent-initiated missions exist but still traverse a central dispatcher. |
-| §5 external protocol | [A2A routes](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/api/a2a/gateway_router.py) | JSON API, not XML tasklists. |
-| §§5, 7 memory and prompts | [Semantic memory](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/core/memory.py), [planner and startup](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/app.py) | SQLite/sqlite-vec; recall inserts text, not automatically all timestamp fields. |
-| §§5, 7 consolidation | [Dream service](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/services/dream.py) | Generates dream prompts and images; does not implement nightly memory consolidation. |
-| §§5, 7 logging | [Text logger](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/backend/core/logging.py) | Wall-clock formatted text; does not establish a uniform dual-timestamp tuple or prompt exposure history. |
-| §5 runtime requirements | [Project manifest](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/pyproject.toml) | Declares Python ≥3.12 and sqlite-vec. A particular deployment's Python version is a separate claim. |
+| §4.2 operations and pace | [Agent base](https://github.com/Jeuners/logpyclaw/blob/main/backend/agents/base.py), [LLM handle](https://github.com/Jeuners/logpyclaw/blob/main/backend/agents/llm_agent.py) | Unit protocol ticks; LLM entry is ticked before inference; rate uses time between ticks, including idle time. |
+| §§4.4–4.5 clock fields and comparisons | [CDC](https://github.com/Jeuners/logpyclaw/blob/main/backend/core/cdc.py) | `vector` = V, `tau` = cumulative progress, `dilation` = rate; generated `wall_ts`; no separate `pace` field. |
+| §4.3 faction γ | [Faction protocol](https://github.com/Jeuners/logpyclaw/blob/main/backend/core/faction_protocol.py) | Learned source/target pace ratio; different convention from the paper's proposed cost conversion. |
+| §5 signature guarantee | [Message signing payload](https://github.com/Jeuners/logpyclaw/blob/main/backend/core/protocol.py) | Clock V and rate are signed; τ and generated `wall_ts` are excluded. |
+| §5 periodic peer initiative | [Conductor](https://github.com/Jeuners/logpyclaw/blob/main/backend/agents/conductor.py), [initiative loop](https://github.com/Jeuners/logpyclaw/blob/main/backend/services/initiative.py) | Agent-initiated missions exist but still traverse a central dispatcher. |
+| §5 external protocol | [A2A routes](https://github.com/Jeuners/logpyclaw/blob/main/backend/api/a2a/gateway_router.py) | JSON API, not XML tasklists. |
+| §§5, 7 memory and prompts | [Semantic memory](https://github.com/Jeuners/logpyclaw/blob/main/backend/core/memory.py), [planner and startup](https://github.com/Jeuners/logpyclaw/blob/main/backend/app.py) | SQLite/sqlite-vec; recall inserts text, not automatically all timestamp fields. |
+| §§5, 7 consolidation | [Dream service](https://github.com/Jeuners/logpyclaw/blob/main/backend/services/dream.py) | Generates dream prompts and images; does not implement nightly memory consolidation. |
+| §§5, 7 logging | [Text logger](https://github.com/Jeuners/logpyclaw/blob/main/backend/core/logging.py) | Wall-clock formatted text; does not establish a uniform dual-timestamp tuple or prompt exposure history. |
+| §5 runtime requirements | [Project manifest](https://github.com/Jeuners/logpyclaw/blob/main/pyproject.toml) | Declares Python ≥3.12 and sqlite-vec. A particular deployment's Python version is a separate claim. |
 
 Searches of the pinned `backend/` and `tests/` found no `TimeProvider`,
 `reference_now` or `parent_reference_now` implementation. Their previous
@@ -63,9 +67,9 @@ assert that those names never existed in another repository or deployment.
 
 | Section | Versioned artifact | Recount / qualification |
 | --- | --- | --- |
-| §6.4 | [dragon3 results](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/experiments/dragon3-results.json) | Execution success 5/10 vs 3/10. Stored winnable oracle summary 9/10 vs 7/8; earlier paper subgroup 7/7 vs 3/5 not reproduced. |
-| §6.5 | [dragon4 results](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/experiments/dragon4-results.json) | Execution success 18/30 vs 21/30; all 33 no-cooldown trials delegate; cooldown self-action 12/14 vs 8/13. |
-| §6.6 | [dragon5 results](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/experiments/dragon5-results.json), [script](https://github.com/Jeuners/logpyclaw/blob/da935366521a00c25ae940ea0581ac9800064782/experiments/dragon5.py) | 200 records; oracle agreement 100/100 vs 55/100; execution success 95/100 vs 57/100. |
+| §6.4 | [dragon3 results](https://github.com/Jeuners/logpyclaw/blob/main/experiments/dragon3-results.json) | Execution success 5/10 vs 3/10. Stored winnable oracle summary 9/10 vs 7/8; earlier paper subgroup 7/7 vs 3/5 not reproduced. |
+| §6.5 | [dragon4 results](https://github.com/Jeuners/logpyclaw/blob/main/experiments/dragon4-results.json) | Execution success 18/30 vs 21/30; all 33 no-cooldown trials delegate; cooldown self-action 12/14 vs 8/13. |
+| §6.6 | [dragon5 results](https://github.com/Jeuners/logpyclaw/blob/main/experiments/dragon5-results.json), [script](https://github.com/Jeuners/logpyclaw/blob/main/experiments/dragon5.py) | 200 records; oracle agreement 100/100 vs 55/100; execution success 95/100 vs 57/100. |
 
 In dragon5, the oracle and treatment share rolling-median action-cost estimates.
 The name-to-backend assignment and name order are randomised; treatment arms

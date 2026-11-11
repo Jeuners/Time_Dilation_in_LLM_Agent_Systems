@@ -451,7 +451,6 @@ with sqlite-vec for semantic memory, serving locally hosted and remotely served
 models through a unified dispatch layer.
 
 Source: <https://github.com/Jeuners/logpyclaw>
-Background: <https://www.dillenberg.net/agentclaw-lokales-multi-agent-ki-system/>
 
 5.1 Implementation Status
 
